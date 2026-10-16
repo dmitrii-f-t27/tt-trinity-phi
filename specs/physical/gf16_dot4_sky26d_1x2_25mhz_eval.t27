@@ -371,3 +371,57 @@ invariant eval_eight_clocks
 // claim beyond what the paired comparison shows. A repair is chosen only after
 // this paired measurement; this policy does not pre-select a stricter fanout,
 // a cell exclusion or any other change.
+//
+// ----------------------------------------------------------------------------
+// 9d. Clarification of 9c after the first run: clean separate processes
+// ----------------------------------------------------------------------------
+// Written BEFORE any new instrumentation; promises no result, pre-selects no repair.
+// First run (instrumentation f2421e794ac45fc80cba1b5c8bea7292a55074e4, workflow
+// 38891741709): the C0, paired and C3 tool steps completed; the summary FAILED the
+// calibration. C1 (final ODB, stored global routes, grt::have_routes = 1) gave 88
+// slew pins in each ss corner and 0 elsewhere. C2, run in the SAME process after
+// C1, read the 3 final SPEF files and gave the same 88 / 88 / 88, not the archived
+// 293 / 228 / 147 / 11; the C2 max_ss slew drivers were 8, not the 30 of the final
+// report. This is a diagnostic FAIL and not a physical pass. No conclusion about the
+// cause of 88 vs 293 is drawn from it; that run stays kept unchanged as evidence and
+// is never re-labelled as passed.
+// Observed only (not a cause): for net66 at max_ss, the wire capacitance range
+// changed from 0.016743-0.016743 (C1) to 0.016743-0.035292 (C2) while the driver
+// output rise slew stayed 0.9001892009585788 in both. One candidate, NOT established,
+// is that reduced parasitic models made from the global-route estimate stayed in use
+// after read_spef: in the cached OpenSTA source, Sta::readSpef invalidates the delays
+// (Sta.cc 3951-3972) but deletes parasitics only when the per-corner parasitic mode
+// changes (Sta.cc 3976-3982), and no Tcl command for deleting parasitics was found in
+// the cached Parasitics.i / Parasitics.tcl. No reset command is guessed or used.
+// C3 fact: the 8 stage-41 drivers are sky130_fd_sc_hd__buf_1 in the stage-39 ODB and
+// sky130_fd_sc_hd__clkbuf_1 at stage 41 and in the final design; at C1 their OpenDB
+// master type is CORE, instance and net dont-touch 0, STA clock set empty (NONE).
+// Why that size was chosen is UNKNOWN.
+// Method change, superseding the same-process C1 + C2 of 9c:
+//   - C1 and C2 run in SEPARATE, clean OpenROAD processes, each started on the same
+//     archived final ODB with the same stage-41 config, SDC, liberty files, image,
+//     PDK and tool versions.
+//   - C1: unchanged from 9c (have_routes recorded first, then the global-route
+//     estimate).
+//   - C2: never calls estimate_parasitics (or anything that makes global-route
+//     parasitics) before or after reading the SPEF files; it reads only the 3 final
+//     SPEF files per corner, explicitly mapped as before. No parasitic or reduced
+//     model is carried over from another process or another model.
+//   - Before and after each process, every input hash is recorded; the logical and
+//     placement records of C1 and C2 are compared with each other and must be
+//     identical; geometry is never changed or written.
+//   - The C2 calibration guards of 9c are unchanged and not weakened: per corner and
+//     kind, exact violating pin sets and counts (293 / 228 / 147 / 11 slew, 0 in the
+//     other corners, cap and fanout 0), limit / slew / slack at 6 digits within 1e-6,
+//     no duplicated pin, and per corner the exact archived unannotated-driver set (32
+//     names) with no new partially annotated driver; any difference fails.
+//   - Per-corner slews come only from the corner-specific API whose unit is calibrated
+//     against report_check_types; get_property slew_max_* is the worst over all
+//     corners and is reported only with that scope (this replaces the 9c sentence
+//     about setting the command corner before per-pin properties).
+// Only after C2 calibration passes in the clean process may C1 vs C2 be read as a
+// parasitic-model comparison; until then the cause of 88 vs 293, and whether the two
+// runs match, stay UNKNOWN. No physical recipe, RTL, limit, corner, interface,
+// envelope or latency change: exactly 8 enabled clocks, all 9 strict corners, 0.75 ns,
+// fanout 10, library cap, 1x2 / 40 ns, GF16 S1 E6 M9 bias 31; nothing is allocated or
+// submitted, and a 1x2 result is not acceptance of issue #100.
