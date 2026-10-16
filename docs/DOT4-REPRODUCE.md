@@ -59,7 +59,7 @@ python3 test/check_results.py test/results.xml test/test.py
 ```
 python3 test/mutation_runner.py       # inside the cocotb venv; copies src/ and test/ to a temp dir
 ```
-It first requires the unmodified RTL to pass all tests, then applies 16 mutations (the 11 original ones plus four for the explicit write enables, the readback group select, the staged alignment sticky and a too-low far-alignment threshold, plus one that drops a carry term of the generic full adder in the multiplier; a mutation that cannot change the GF16 result, such as turning the far jam 1 into 0, is deliberately NOT included because an equivalent mutant cannot be killed) to the temporary
+It first requires the unmodified RTL to pass all tests, then applies 18 mutations (the original ones, where the single MUL tie mutation became three for the lower-binade tie, the upper-binade tie and the lower-binade rounding carry, plus four for the explicit write enables, the readback group select, the staged alignment sticky and a too-low far-alignment threshold, plus one that drops a carry term of the generic full adder in the multiplier; a mutation that cannot change the GF16 result, such as turning the far jam 1 into 0, is deliberately NOT included because an equivalent mutant cannot be killed) to the temporary
 copy (B forced to 0, wrong `uio_oe`, signature shown as a result, result visible while busy, ERR never
 set, WR/GO priority swapped, `ena` ignored, GO not resetting PTR, wrong MUL tie, wrong ADD tie, no sticky
 bit) and requires every one to be KILLED by a PINFAIL; a surviving mutation or an infrastructure error
@@ -205,6 +205,24 @@ unknown area fails the probe. The probes optimise across different boundaries: t
 not a physical partition. Any missing, non-finite or non-positive value, calibration mismatch, exclusion/library
 mismatch with the official run or tool error makes the step exit non-zero; the artifact is always uploaded and a red
 Build GDS is never masked. `--no-run --runs-root <dir> --baseline-run <dir>` validates copies. A diagnosis, not a fit proof.
+
+## 9e. MUL normalise/round/exponent in two parallel binades
+`src/gf16_v2_mul.v` computes the rounding and the exponent for both binades of the significand product in parallel
+and lets `prod[19]` (or the lower-binade rounding carry) select at the end; the order stays round first, then the range
+rules, with the same priorities (NaN, Inf, zero, underflow and the 2^-31 gap to +0, overflow, pack). Basis: the operands
+are `{1, M}`, so the integer product is `2^18 <= P <= 1023*1023 = 1046529`. Lower binade: round up iff `P[8:0] > 256`
+(`P[8]` and any of `P[7:0]`, a tie stays down); the fraction is `P[17:9]`; the round-up carries out exactly when `P[17:9]`
+is all ones, which is reachable (`724*724 = 524176`). Upper binade: round up iff `P[9:0] > 512`; the fraction is
+`P[18:10]`; a carry would need the significand `P[19:10] = 1023`, i.e. `P >= 1047552` (and, with a tie staying down, a remainder above 512, so `P >= 1023*1024 + 513 = 1048065`), above the
+maximum, so it is unreachable for this wrapper (not for an arbitrary 20-bit input: `gf16_sig_mul10` is unchanged and still
+covers all 1024 x 1024 pairs). The exponent candidates `esum - 31` and `esum - 30` and their range flags are formed in
+parallel and selected by `top | cy_lo`. `test/mul_pack_bound.py`, run inside `test/unit_sweeps.py`, checks in plain integers
+over all 512 x 512 = 262144 pairs that the mantissa and exponent increment of the new formulas equal the old
+select-then-round scheme, that the upper carry count is 0, that the maximum product is 1046529 and that the lower carry
+occurs; it is not an exhaustive check of all GF16 operand pairs, and the RTL itself is checked by the exact-oracle unit
+sweeps (all 512 x 512 mantissa pairs at the threshold exponent sums), the pin tests (new exact-tie and carry vectors
+`mul_tie_toward_zero_upper_binade` 0x407D and `mul_rounding_carry_into_next_binade` 0x4000) and the mutations. No area or
+timing is claimed before the official GDS.
 
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a

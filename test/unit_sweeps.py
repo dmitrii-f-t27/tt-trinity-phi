@@ -36,6 +36,7 @@ SRC = os.path.join(ROOT, "src")
 sys.path.insert(0, HERE)
 
 import gf16_oracle as orc
+import mul_pack_bound
 
 CHUNK = 262144
 E_SET = sorted(set(list(range(0, 13)) + list(range(26, 37)) + list(range(50, 63))))
@@ -181,6 +182,7 @@ def main():
     totals = {"mul": 0, "add": 0}
     with tempfile.TemporaryDirectory() as tmp:
         ok_all &= run_sig_mul(tmp)
+        ok_all &= mul_pack_bound.run()      # 512 x 512 integer pairs: upper carry bound + two-binade equivalence
         for op in ("mul", "add"):
             if args.only and args.only != op:
                 continue
