@@ -25,6 +25,23 @@ jobs:
         with:
           pdk: sky130A
 
+      # Inputs of the physical sign-off audit (job physical-signoff below): the step configs, STA state and
+      # per-corner reports, final metrics and final netlists of THIS run, read-only. Uploading them changes
+      # nothing in runs/wokwi; a red Build GDS stays red.
+      - name: Upload the sign-off inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PHYSICAL_RUN
+          path: |
+            runs/wokwi/*/config.json
+            runs/wokwi/*/state_out.json
+            runs/wokwi/*/*/checks.rpt
+            runs/wokwi/final/metrics.json
+            runs/wokwi/final/nl/
+            runs/wokwi/final/pnl/
+          if-no-files-found: error
+
       # Diagnosis only, NOT a fit proof and NOT part of the physical verdict. It runs even when Build
       # GDS fails (the PDK stays on this runner); a red Build GDS stays red whatever this step does.
       # It uses the host yosys (a different version from the GDS flow, recorded in the artifact) and
@@ -129,6 +146,35 @@ jobs:
           path: |
             block-profile-out/
             runs/block-profile/
+          if-no-files-found: error
+
+  # Strict physical sign-off (sidecar section 9): all nine corners, setup/hold/cap/slew/fanout 0 including the
+  # clock network, DRC/LVS/antenna 0, the two excluded delay cells absent. A separate job, so a FAIL here never
+  # skips precheck or gl_test, and a red gds job stays red. test/physical_signoff_audit.py exits non-zero on
+  # any problem or missing input.
+  physical-signoff:
+    needs: gds
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v6
+
+      - name: Download the sign-off inputs of this run
+        uses: actions/download-artifact@v4
+        with:
+          name: PHYSICAL_RUN
+          path: runs/wokwi
+
+      - name: Physical sign-off audit (fail closed)
+        run: python3 test/physical_signoff_audit.py --run-dir runs/wokwi --out physical-signoff
+
+      - name: Upload the physical sign-off audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PHYSICAL_SIGNOFF
+          path: physical-signoff/
           if-no-files-found: error
 
   precheck:

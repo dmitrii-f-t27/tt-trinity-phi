@@ -115,6 +115,9 @@ None.
   has not been checked for this branch.
 - Fit in 1x2 and timing at 25 MHz are **unknown** until the GDS run (all-corner STA) of the latest commit.
   25 MHz is a target, not a measured performance; the protocol, pins and 8-clock latency are unchanged.
+- At commit `51bf202` the layout built, but it is **not ready**: 167 max-slew violations and one clock-root
+  fanout violation (16 against a limit of 10) are open. A candidate fix (two delay cells excluded, strict
+  checks in all 9 corners, CTS wire buffering) is not yet validated.
 - No performance, energy or area claim is made.
 - Archived blocks of earlier revisions (formats, quantizers, ROMs, mesh, power modules) remain in
   `src/` and `docs/` as history only. They are not part of this design.

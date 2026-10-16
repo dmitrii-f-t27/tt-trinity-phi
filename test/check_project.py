@@ -12,7 +12,8 @@ sensitivity lists and attributes are not arithmetic). Python 3 standard library 
 Physical profile, chosen by the environment variable PHI_PROFILE (exact values only):
   unset / "default"  1x1, clock_hz 50000000, CLOCK_PERIOD 20 (the original #100 envelope)
   "eval-1x2"         isolated evaluation: 1x2, clock_hz 25000000, CLOCK_PERIOD 40, density 65,
-                     AREA 1, MFS3 False, AREA_USE_NF False; the constants of
+                     AREA 1, MFS3 False, AREA_USE_NF False, the two excluded delay cells, strict
+                     timing/slew/cap checker corners ["*"], CTS 20 / 50 um; the constants of
                      specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27 must agree with info.yaml and
                      src/config.json, its latency must equal LATENCY_CLOCKS = 8 of the numeric spec, and
                      the numeric spec must be byte-identical to NUMERIC_SPEC_SHA256.
@@ -48,7 +49,13 @@ PROFILES = {
     "eval-1x2": {
         "tiles": "1x2", "clock_hz": 25000000, "sidecar": PHYSICAL_SPEC,
         "config": {"CLOCK_PERIOD": 40, "PL_TARGET_DENSITY_PCT": 65, "SYNTH_STRATEGY": "AREA 1",
-                   "SYNTH_ABC_USE_MFS3": False, "SYNTH_ABC_AREA_USE_NF": False},
+                   "SYNTH_ABC_USE_MFS3": False, "SYNTH_ABC_AREA_USE_NF": False,
+                   # physical closure (sidecar section 9): two delay cells excluded, all checkers strict,
+                   # experimental CTS geometry 20 / 50 um; limits 0.75 ns / fanout 10 are not touched here
+                   "EXTRA_EXCLUDED_CELLS": ["sky130_fd_sc_hd__clkdlybuf4s25_1", "sky130_fd_sc_hd__clkdlybuf4s50_1"],
+                   "TIMING_VIOLATION_CORNERS": ["*"], "MAX_SLEW_VIOLATION_CORNERS": ["*"],
+                   "MAX_CAP_VIOLATION_CORNERS": ["*"],
+                   "CTS_DISTANCE_BETWEEN_BUFFERS": 20, "CTS_CLK_MAX_WIRE_LENGTH": 50},
     },
 }
 
@@ -255,7 +262,8 @@ def profile_gate(name, prof, tiles, clock):
     num = spec_consts(NUMERIC_SPEC)
     want = {"TILES_X": int(prof["tiles"].split("x")[0]), "TILES_Y": int(prof["tiles"].split("x")[1]),
             "REQUIRED_TILE_UNITS": 2, "CLOCK_HZ": prof["clock_hz"], "CLOCK_PERIOD_NS": prof["config"]["CLOCK_PERIOD"],
-            "LATENCY_ENABLED_CLOCKS": 8}
+            "LATENCY_ENABLED_CLOCKS": 8, "SIGNOFF_STA_CORNERS": 9, "SIGNOFF_MAX_SLEW_PS": 750,
+            "SIGNOFF_MAX_FANOUT": 10, "SIGNOFF_ALLOWED_VIOLATIONS": 0}
     for key, val in want.items():
         if side.get(key) != val:
             fail("sidecar %s is %r, expected %r" % (key, side.get(key), val))

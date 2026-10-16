@@ -280,6 +280,20 @@ rows and the minimum VALID row, a candidate for the full GDS, not a winner; this
 not a fit proof. `--no-run --runs-root <dir> --baseline-run <dir> [--path-map OLD=NEW]` validates copies and also requires
 the exit record (a missing record is a failure, never a pass); a non-empty run directory still blocks a run.
 
+## 9i. Physical sign-off audit (CI, evaluation branch)
+Build GDS can succeed with open violations: at `51bf202` it did, with 167 max-slew violations (worst corner
+`max_ss_100C_1v60`, limit 0.75 ns) and one clock-root fanout violation (16 against 10), because the official
+max-slew checker only warns by default and no fanout checker exists. Policy: sidecar section 9. Job
+`physical-signoff` in `gds.yaml` downloads the artifact `PHYSICAL_RUN` (step configs, STA state and per-corner
+`checks.rpt`, final metrics and netlists, uploaded right after Build GDS) and runs
+`python3 test/physical_signoff_audit.py --run-dir runs/wokwi --out physical-signoff`: all 9 corners, every
+setup/hold/cap/slew/fanout count 0 (clock included), slack >= 0, report footers equal to the metrics, Magic DRC,
+LVS and antenna 0, utilization <= 1, the strict checker corners actually accepted, and the two excluded delay
+cells absent from the final netlist. Any missing or inconsistent input fails it. Unit tests on synthetic fixtures
+(`python3 test/test_physical_signoff_audit.py`) only show that the auditor fails closed. The candidate fix in
+`src/config.json` (exclusion of `clkdlybuf4s25_1` / `clkdlybuf4s50_1`, strict checker corners, CTS distance
+between buffers 20 um and clock max wire length 50 um) is not validated; the limits 0.75 ns / 10 are unchanged.
+
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
 non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty

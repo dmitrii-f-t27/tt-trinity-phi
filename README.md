@@ -12,6 +12,12 @@ multiplier and one shared adder, 8 clocks per dot product; `uio` is input only. 
 > not ready, and nothing is ordered: 2 is the number of tile units the 1x2 shape requires, not a number of
 > allocated slots. 25 MHz is a target, not a measured or claimed performance. RTL comments that say 1x1
 > are history of the #100 contract; the physical envelope of this branch is the sidecar and `info.yaml`.
+>
+> Physical status: at `51bf202` the GDS was built, but 167 max-slew violations and one clock-root fanout
+> violation (16 > 10) are open, so it is **not ready**. Sidecar section 9 sets the sign-off policy (all 9
+> corners, every violation count 0, clock included). A candidate fix in `src/config.json` (exclusion of
+> `sky130_fd_sc_hd__clkdlybuf4s25_1` / `clkdlybuf4s50_1`, strict checker corners, CTS 20 / 50 um wire
+> buffering) is unvalidated until the `physical-signoff` job of a run reports it.
 
 ## Status (read this first)
 

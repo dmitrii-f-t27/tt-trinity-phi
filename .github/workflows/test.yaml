@@ -30,6 +30,10 @@ jobs:
           PHI_PROFILE: eval-1x2
         run: python3 test/check_project.py
 
+      # Synthetic fixtures only: proves the auditor fails closed, not anything about the layout
+      - name: Physical sign-off auditor unit tests (fail-closed parser, synthetic fixtures)
+        run: python3 test/test_physical_signoff_audit.py -v
+
   unit-full:
     name: Isolated MUL/ADD vs exact oracle (full sweeps, 0 mismatches)
     runs-on: ubuntu-24.04
