@@ -37,6 +37,7 @@ sys.path.insert(0, HERE)
 
 import gf16_oracle as orc
 import mul_pack_bound
+import add_norm_check
 
 CHUNK = 262144
 E_SET = sorted(set(list(range(0, 13)) + list(range(26, 37)) + list(range(50, 63))))
@@ -171,6 +172,21 @@ def run_sig_mul(tmp):
     return ok
 
 
+def run_add_norm(tmp):
+    """The real RTL module gf16_add_norm14 against the old leading-zero definition on all 2^14 inputs."""
+    exe = os.path.join(tmp, "tb_add_norm14")
+    c = subprocess.run(["iverilog", "-g2012", "-o", exe, os.path.join(HERE, "tb_add_norm14.v"),
+                        os.path.join(SRC, "gf16_v2_add.v")], capture_output=True, text=True)
+    if c.returncode != 0:
+        print("iverilog failed for tb_add_norm14:\n" + c.stderr)
+        return False
+    r = subprocess.run(["vvp", exe], capture_output=True, text=True)
+    m = re.search(r"ADDNORM14_RESULT N=(\d+) MISMATCH=(\d+)", r.stdout)
+    ok = r.returncode == 0 and m is not None and int(m.group(1)) == 1 << 14 and int(m.group(2)) == 0
+    print("add_norm14 exhaustive: %s (%s)" % ("PASS" if ok else "FAIL", m.group(0) if m else r.stdout[-300:]))
+    return ok
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", choices=("quick", "full"), default="quick")
@@ -183,6 +199,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         ok_all &= run_sig_mul(tmp)
         ok_all &= mul_pack_bound.run()      # 512 x 512 integer pairs: upper carry bound + two-binade equivalence
+        ok_all &= add_norm_check.run()      # 2^14 integer model of the 8/4/2/1 normaliser vs the old definition
+        ok_all &= run_add_norm(tmp)         # the real RTL gf16_add_norm14 on the same 16384 inputs
         for op in ("mul", "add"):
             if args.only and args.only != op:
                 continue

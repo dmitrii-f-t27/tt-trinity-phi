@@ -27,7 +27,8 @@
 //   * ONE 14-bit adder does both operations: for an effective subtraction the aligned
 //     operand is inverted and a carry-in of 1 is added (two's complement); both come from a
 //     single 15-bit addition whose low bit supplies the carry-in;
-//   * after the add the sum is normalised by a leading-zero count and rounded.
+//   * after the add the sum is normalised by a fixed 8/4/2/1 left-normalisation tree (module
+//     gf16_add_norm14 below, same count and word as a leading-zero encoder plus shift) and rounded.
 //
 // Algebra (checked by test/unit_sweeps.py against the exact rational oracle, not asserted here):
 //   staged shift: the stages move by 1, 2, 4, 8 exactly when bits 0..3 of d are set, so the total
@@ -38,6 +39,33 @@
 //   X + Y < 2^14 needs no wrap. {X,1} + {Y',c} with c = eff_sub and Y' = Y xor eff_sub
 //   gives (X + Y' + c) in bits [14:1] because bit 0 contributes 1 + c, whose carry is c.
 `default_nettype none
+
+// Left-normaliser of the 14-bit sum: lz is the number of leading zeros (14 for x = 0) and norm is x shifted
+// left by lz (so the leading one sits at bit 13; norm is 0 for x = 0). The same function as the earlier
+// priority encoder followed by a variable shift (lz = 13 - position of the leading one, 14 for zero), but
+// built as four fixed stages of 8, 4, 2 and 1 positions: each stage tests whether the top group of the
+// word that is left is empty and, if so, shifts the word by exactly that group size; the tests ARE the bits
+// of lz. Why it works: after the 8-stage a nonzero word has its leading one in bits 13..6 (the stage moves
+// a one from bits 5..0 up by 8), after the 4-stage in 13..10, after the 2-stage in 13..12, and the
+// 1-stage moves a one at bit 12 to 13. For x = 0 every group test is true except the last one, which is
+// qualified by n2[12]: a zero word leaves lz = 8 + 4 + 2 = 14, matching the old encoder's "default" case.
+// test/tb_add_norm14.v compares this module with the old definition on all 16384 inputs.
+module gf16_add_norm14 (
+    input  wire [13:0] x,
+    output wire [13:0] norm,
+    output wire [3:0]  lz
+);
+    wire        s8 = ~(|x[13:6]);
+    wire [13:0] n8 = s8 ? {x[5:0], 8'd0} : x;
+    wire        s4 = ~(|n8[13:10]);
+    wire [13:0] n4 = s4 ? {n8[9:0], 4'd0} : n8;
+    wire        s2 = ~(|n4[13:12]);
+    wire [13:0] n2 = s2 ? {n4[11:0], 2'd0} : n4;
+    wire        s1 = ~n2[13] & n2[12];
+    assign norm = s1 ? {n2[12:0], 1'b0} : n2;
+    assign lz   = {s8, s4, s2, s1};
+endmodule
+
 module gf16_v2_add (
     input  wire [15:0] a,
     input  wire [15:0] b,
@@ -94,31 +122,10 @@ module gf16_v2_add (
     wire [14:0] sum15  = {1'b0, bext, 1'b1} + {smj_x, eff_sub};
     wire [13:0] tsum   = sum15[14:1];
 
-    function [3:0] lzc14;
-        input [13:0] x;
-        begin
-            casez (x)
-                14'b1?????????????: lzc14 = 4'd0;
-                14'b01????????????: lzc14 = 4'd1;
-                14'b001???????????: lzc14 = 4'd2;
-                14'b0001??????????: lzc14 = 4'd3;
-                14'b00001?????????: lzc14 = 4'd4;
-                14'b000001????????: lzc14 = 4'd5;
-                14'b0000001???????: lzc14 = 4'd6;
-                14'b00000001??????: lzc14 = 4'd7;
-                14'b000000001?????: lzc14 = 4'd8;
-                14'b0000000001????: lzc14 = 4'd9;
-                14'b00000000001???: lzc14 = 4'd10;
-                14'b000000000001??: lzc14 = 4'd11;
-                14'b0000000000001?: lzc14 = 4'd12;
-                14'b00000000000001: lzc14 = 4'd13;
-                default:            lzc14 = 4'd14;
-            endcase
-        end
-    endfunction
-
-    wire [3:0]  lz   = lzc14(tsum);
-    wire [13:0] norm = tsum << lz;               // leading one at bit 13 (tsum != 0)
+    // normalisation: leading-zero count and the left-aligned word from one fixed 8/4/2/1 tree
+    wire [3:0]  lz;
+    wire [13:0] norm;                            // leading one at bit 13 (tsum != 0)
+    gf16_add_norm14 u_norm (.x(tsum), .norm(norm), .lz(lz));
     wire [9:0]  sigk = norm[13:4];
     wire        g    = norm[3];
     wire        rest = |norm[2:0];

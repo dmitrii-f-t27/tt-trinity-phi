@@ -224,6 +224,20 @@ sweeps (all 512 x 512 mantissa pairs at the threshold exponent sums), the pin te
 `mul_tie_toward_zero_upper_binade` 0x407D and `mul_rounding_carry_into_next_binade` 0x4000) and the mutations. No area or
 timing is claimed before the official GDS.
 
+## 9f. ADD normalisation as a fixed 8/4/2/1 tree
+After the single 14-bit add, `src/gf16_v2_add.v` normalises the sum with the module `gf16_add_norm14` (same file, purely
+combinational, instantiated only by the adder, so the four-file source list is unchanged): four fixed stages of 8, 4, 2
+and 1 positions; each stage tests whether the top group of the word that is left is empty and, if so, shifts the word by
+that group size, and the four tests are the bits of the leading-zero count. It replaces the earlier priority encoder
+followed by a variable shift and is the SAME function: `lz = 13 - position of the leading one`, 14 for a zero sum (the
+last stage is qualified by bit 12, so a zero word leaves 8 + 4 + 2 = 14), and `norm = x << lz` in 14 bits (0 for zero).
+Alignment, add/subtract, rounding, range and special handling are untouched. Checks: `test/add_norm_check.py` (integer
+model of the formulas, all 16384 sums, run by `test/unit_sweeps.py`) and `test/tb_add_norm14.v` (the REAL RTL module
+against the old definition on the same 16384 inputs: count and word, including zero, every leading-one position and
+bit 13; `ADDNORM14_RESULT N=16384 MISMATCH=0`, also run by `test/unit_sweeps.py`, exit code and the exact N are
+required); the adder itself stays covered by the exact-oracle unit sweeps, the pin tests and the existing mutations.
+No area or timing is claimed before the official GDS.
+
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
 non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty
