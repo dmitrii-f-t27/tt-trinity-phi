@@ -266,3 +266,59 @@ invariant eval_eight_clocks
 // 0), Magic DRC / LVS / antenna 0 and utilization <= 1, with the auditor, precheck
 // and gate-level test all required. A clean 1x2 result still does not meet
 // issue #100, whose target is one 1x1 tile.
+//
+// ----------------------------------------------------------------------------
+// 9b. READ-ONLY observation of the archived stage-41 database
+// ----------------------------------------------------------------------------
+// Observation policy written BEFORE any instrumentation. It fixes what will be
+// measured and the hard guards; it does not promise a result and changes no
+// acceptance rule, limit, clock, function or recipe.
+// Known (f6f4db6, GDS run 38855207187): strict sign-off FAIL with max-slew
+// violating pins max_ss 293, nom_ss 228, min_ss 147, max_tt 11, other corners 0;
+// cap, fanout, setup and hold violations 0 in all 9 corners; DRC / LVS / antenna
+// 0; precheck and gate-level test skipped. The post-global-route repair step
+// (stage 41) logged 13 slew violations and 13 resizes; the final 293 pins belong
+// to 30 output drivers. These numbers have different units and stages; the
+// cause is UNKNOWN. Full RTL run 38855206913 passed all 10 jobs (53,750,618
+// sampled MUL/ADD vectors, 0 mismatches); that is not a physical pass.
+// Purpose: measure all 9 corners on the archived stage-41 output, without any new
+// repair, to locate where the final violations appear. It is a diagnostic, not a
+// further change of the repair recipe.
+// Inputs (exact, verified before use):
+//   - only the GDS_logs artifact 12026633781 of run 38855207187 in
+//     dmitrii-f-t27/tt-trinity-phi; its head SHA must be f6f4db6; zip sha256
+//     8a48797fa77e74e60b4790f4dbdf7eaf0fa6ca8946fd963c46c3b1439c6b2339 and the
+//     hashes of every used member are recorded;
+//   - the stage-41 OUTPUT tt_um_trinity_nano.odb with that step's config, state
+//     and SDC;
+//   - the same pinned linux/amd64 LibreLane image
+//     ghcr.io/librelane/librelane@sha256:f91b21d75f79871f9ccf37451020b5d2f7b3236881a997ff709c561e8280a30f
+//     (image ID sha256:897f703b9de811e792eb22023fd0986418bbbd9ae5ff511eb74419008eac810f),
+//     LibreLane 3.0.14, sky130 PDK 8afc8346a57fe1ab7934ba5a6056ea8b43078e71.
+// The report records the tool binary versions, the hashes of config, ODB, SDC and
+// liberty files, and the names of all 9 corners.
+// Method: read the archived ODB with the same constraints, liberty models and RC
+// settings. No repair, resize, placement, netlist, RTL, build or limit change.
+// The original inputs are read-only and hashed before and after; outputs go to a
+// separate writable directory. Query grt::have_routes BEFORE any reconstruction.
+// If the historical routes or parasitics cannot be recovered, only global routing
+// may be reconstructed in memory with the existing pinned recipe; every such
+// result is labelled RECONSTRUCTED and is never presented as an exact replay.
+// Output: per corner, the raw max-slew, max-cap and max-fanout results and the
+// driver-to-cell mapping, compared with the final counts above WITHOUT a causal
+// claim.
+// Guards:
+//   - all 9 corners must be reported explicitly; a missing or malformed result or
+//     a corner-name mismatch fails the diagnostic;
+//   - diagnostic SUCCESS means only that the measurement is complete; any
+//     non-zero slew stays a physical FAIL under section 9;
+//   - no official gate is disabled, skipped or weakened; the existing gds, test and
+//     docs workflows stay unchanged;
+//   - the instrumentation commit is a different SHA from the measured archived
+//     f6f4db6;
+//   - no local build or install, no budget, purchase, allocation, submission or
+//     project creation, no FPGA.
+// None of this changes issue #100 (one 1x1 tile), the 1x2 / 40 ns envelope, the
+// exactly-8-enabled-clocks latency, GF16 S1 E6 M9 bias 31, the independent A/B
+// operands, the interface, the RTL or the numeric spec (sha256
+// 01249989ab5688eb78fc6950880238102daf6608b7cf1946b29b7277f53003c9).
