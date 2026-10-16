@@ -34,7 +34,7 @@ jobs:
       # red on purpose (fail closed). See test/area_profile.py.
       - name: Area profile postmortem (hierarchical diagnosis)
         if: always()
-        run: python3 test/area_profile.py --out area-profile
+        run: python3 test/area_profile.py --out area-profile --pdk sky130A
 
       - name: Upload the area profile
         if: always()

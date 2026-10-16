@@ -71,16 +71,35 @@ def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
-def find_lib():
+def in_variant(path, pdk):
+    """True when path ends with .../<pdk>/libs.ref/sky130_fd_sc_hd/lib/<LIB_NAME> for EXACTLY this pdk
+    variant (a path component equal to pdk, directly followed by those three components)."""
+    parts = path.split(os.sep)
+    for i, comp in enumerate(parts):
+        if comp == pdk and parts[i + 1:i + 4] == ["libs.ref", "sky130_fd_sc_hd", "lib"]:
+            return True
+    return False
+
+
+def find_lib(pdk):
+    """The liberty of the PDK variant the official build used (pdk: sky130A). The ciel store holds both
+    sky130A and sky130B under the same version, so the variant is part of the selection; the other
+    variant is excluded explicitly. Still exactly ONE real non-empty file is required."""
     roots = ["/home/runner/.ciel", os.path.expanduser("~/.ciel"), os.environ.get("PDK_ROOT", "")]
     found = set()
     for r in roots:
         if r and os.path.isdir(r):
             for p in glob.glob(os.path.join(r, "**", LIB_NAME), recursive=True):
-                if "sky130_fd_sc_hd" in p and os.path.isfile(p) and os.path.getsize(p) > 0:
-                    found.add(os.path.realpath(p))
+                if in_variant(p, pdk) and os.path.isfile(p) and os.path.getsize(p) > 0:
+                    real = os.path.realpath(p)
+                    # a sky130A path that resolves into another variant is not accepted either
+                    if any(c.startswith("sky130") and c != pdk for c in real.split(os.sep)
+                           if c in ("sky130A", "sky130B")):
+                        continue
+                    found.add(real)
     if len(found) != 1:
-        raise RuntimeError("expected exactly one non-empty %s, found %s" % (LIB_NAME, sorted(found)))
+        raise RuntimeError("expected exactly one non-empty %s under %s/libs.ref/sky130_fd_sc_hd/lib, found %s"
+                           % (LIB_NAME, pdk, sorted(found)))
     return found.pop()
 
 
@@ -184,6 +203,8 @@ def delta(results, a, b):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
+    ap.add_argument("--pdk", default="sky130A",
+                    help="PDK variant of the official build (gds.yaml uses pdk: sky130A); sky130B is excluded")
     args = ap.parse_args()
     out = args.out
     os.makedirs(out, exist_ok=True)
@@ -192,7 +213,8 @@ def main():
     try:
         meta["yosys"] = ensure_yosys()
         note("host yosys: %s (NOT the version inside the GDS flow; diagnosis only)" % meta["yosys"])
-        lib = find_lib()
+        lib = find_lib(args.pdk)
+        meta["pdk_variant"] = args.pdk
         with open(lib, "rb") as f:
             meta["liberty"] = {"path": lib, "bytes": os.path.getsize(lib),
                                "sha256": hashlib.sha256(f.read()).hexdigest()}

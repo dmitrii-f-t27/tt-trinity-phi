@@ -117,7 +117,9 @@ relative path for the seal run, requires `seal.toolchain.test_runner` to equal `
 removes the temporary copy afterwards. The seal JSON is never edited by hand and `--force` is never used.
 
 ## 9a. Hierarchical area diagnosis (CI, after Build GDS)
-`gds.yaml` runs `python3 test/area_profile.py --out area-profile` after the official Build GDS step with
+`gds.yaml` runs `python3 test/area_profile.py --out area-profile --pdk sky130A` (the variant of `pdk: sky130A` in
+the Build GDS step; the PDK store on the runner holds both sky130A and sky130B copies of the same liberty name, and
+only `.../sky130A/libs.ref/sky130_fd_sc_hd/lib/` is accepted, sky130B is excluded) after the official Build GDS step with
 `if: always()` and uploads the artifact `AREA_PROFILE`. It installs the host `yosys` (a different version from the
 one inside the GDS flow; recorded), finds exactly one non-empty `sky130_fd_sc_hd__tt_025C_1v80.lib` on the runner,
 fetches archived commit `949a634` with `git fetch --depth=1 origin 949a634...` (no checkout, the branch is
