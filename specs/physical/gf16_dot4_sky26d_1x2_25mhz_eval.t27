@@ -538,3 +538,62 @@ invariant eval_eight_clocks
 // zero, precheck, gate-level, RTL, native, Docs); anything else is FAIL. No second
 // lever in the same run; a 1x2 result is not acceptance of issue #100; nothing is
 // allocated, purchased or submitted.
+//
+// ----------------------------------------------------------------------------
+// 9g. Result of 9f and the next candidate: post-global-route wire-length repair
+// ----------------------------------------------------------------------------
+// Policy written BEFORE implementation; a geometric experiment, not a claimed fix.
+// 9f result (implementation 7978d65a0503201f9205ed7304f0ed0b1bba7a15, GDS workflow
+// 38896309407, PHYSICAL_RUN artifact 12043813752): Build GDS FAILED; strict audit
+// FAILED with max-slew 25 pins in max_ss, 9 in nom_ss, 9 in min_ss and 0 in the
+// other corners; cap, fanout, setup and hold 0; DRC, LVS and antenna 0; utilization
+// 0.58894. The violating drivers are _1715_/Y and _1724_/Y (sky130_fd_sc_hd__nand3b_2,
+// 0.861238 and 0.796886 ns) and _1163_/Y (sky130_fd_sc_hd__nor3b_2, 0.762109 ns);
+// synthesis mapped the control logic differently. 9f is a regression from 9e and is
+// abandoned; its NOR2 floor is not carried forward. The best measured recipe stays
+// 9e (edf0613ad5b561cbb5472aa0adde7ad122f1446b): 10 max_ss pins on one net.
+// Geometry of that 9e net, from its raw GDS logs archive (sha256
+// baa3f43479fc37cd4612d2699d8ffe65febd44688905d8d3c1437ea2b22eff9c): wire_lengths.csv
+// gives net _0364_ a routed length of 125.9 um; in final.def the same 10 pins span
+// about y 47.77 to 150.45 (DEF units not re-verified, so only approximate).
+// Source evidence (cached LibreLane 3.0.14 / OpenROAD dcf36133):
+//   - repair_design_postgrt.tcl line 36 passes -max_wire_length
+//     $GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH; openroad.py lines 2660-2667 define it in um
+//     with default 0 ("If set to 0, no buffers will be inserted"); the archived 9e
+//     stage-41 config has GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH 0, so the current recipe
+//     has no wire-length guard after global routing;
+//   - Resizer.tcl 925-933 converts the um value with sta::distance_ui_sta;
+//     RepairDesign.cc 296-297 and 404 take meters, 0 meaning none, then dbu;
+//   - for every driver, repairNet measures bnet->maxLoadWireLength() of its
+//     buffered net and inserts repeaters when it exceeds the limit
+//     (RepairDesign.cc 1165-1181, 1216-1224); Resizer.tcl 936-952 only WARNS when the
+//     value is below the minimum-delay length, it does not override it.
+// So the lever acts on EVERY net whose longest driver-to-load wire after global
+// routing exceeds the limit, not only on _0364_; the measured length is the
+// buffered-net tree, not the routed total of wire_lengths.csv.
+// Candidate (one change relative to 9e, nothing else):
+//   - EXTRA_EXCLUDED_CELLS back to the exact 6 entries of 9e (the 3 delay families,
+//     buf_1, clkbuf_1, clkbuf_2); nor2_1 / nor2_2 are no longer excluded;
+//   - GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH = 50 (um), below the 125.9 um of _0364_ and
+//     its roughly 100 um span;
+//   - unchanged from 9e: CTS_CLK_BUFFERS [clkbuf_8, clkbuf_4], CTS_ROOT_BUFFER
+//     clkbuf_16, repair margins 20 / 20 and 10 / 10, RUN_GRT true, 40 ns, all 9
+//     strict corners, 0.75 ns, fanout 10, library cap, every checker, the official
+//     filters; no DEFAULT_CORNER change, no margin sweep, no tool or netlist patch,
+//     no RTL or synthesis-logic change beyond restoring the 9e list.
+// Unchanged: exactly 8 enabled clocks, GF16 S1 E6 M9 bias 31, independent A/B, the
+// interface, the RTL, the numeric spec and its declarations; main and the 1x1
+// acceptance target are untouched.
+// Not promised: that STA passes, nor the area, hold, routing and new-violation
+// outcome of the inserted repeaters; all UNKNOWN until the CI run.
+// Strict validation (a check, not a waiver): the auditor's excluded set returns to
+// the exact 6 entries (PnR, synthesis, final netlist); a new check reads the
+// OpenROAD.RepairDesignPostGRT step config found by meta.step (these keys are not in
+// the STAPostPNR config) and requires GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH == 50,
+// GRT_DESIGN_REPAIR_MAX_SLEW_PCT == 10, GRT_DESIGN_REPAIR_MAX_CAP_PCT == 10 and
+// GRT_DESIGN_REPAIR_RUN_GRT true; a missing step, a missing value, 0 or another
+// value FAILS. The 9e CTS checks stay. The 9f NOR2-floor fixtures become history of
+// 9f; no generic negative electrical gate fixture is removed. PASS only as in 9e
+// (official GDS, strict 9-corner sign-off at zero, precheck, gate-level, RTL,
+// native, Docs); anything else is FAIL. A 1x2 result is not acceptance of issue
+// #100; nothing is allocated, purchased or submitted.
