@@ -136,6 +136,29 @@ diagnosis makes the step exit non-zero (the artifact upload runs with `if: alway
 red Build GDS green. It is a diagnosis (host yosys, not the GDS flow's version), not a fit proof; whether the
 liberty and tools exist on the runner is only confirmed by the CI run itself.
 
+## 9b. Official synthesis strategies (CI, after Build GDS)
+The host profile of 9a does not reproduce the official synthesis: the official flow maps against a library that
+drops the cells listed in the PDK `no_synth.cells` and `drc_exclude.cells`, with its own ABC script. `gds.yaml`
+therefore also runs `python3 test/synth_explore.py` (`if: always()`, artifact `SYNTH_EXPLORE`): the official
+LibreLane 3.0.14 built-in `SynthesisExploration` flow (`python -m librelane --docker-no-tty --dockerized --flow
+SynthesisExploration`; `--docker-no-tty` must come BEFORE `--dockerized`, because the container entry reads it
+before the eager `--dockerized` option and forwards only the arguments after it; strategies AREA 0..3 and
+DELAY 0..4) on the same `src/config_merged.json`, PDK and cell exclusions, in `runs/synth-explore`
+(`runs/wokwi` is never touched). The built-in flow can exit 0 with a failed strategy hidden inside, so the nine
+rows (cells, area, worst r2r setup slack, worst setup slack, TNS) are rebuilt from the real step states: the
+strategy comes strictly from the normalised name of the custom STA directory (`<n>-sta-<strategy>`; the STA
+config has no `SYNTH_STRATEGY`), which must be an `OpenROAD.STAPrePNR` step, paired with the matching
+`<n>-synthesis-<strategy>` directory (`Yosys.Synthesis`, same `SYNTH_STRATEGY`) for cells and area; a missing,
+duplicated or mismatching source fails the row, a missing value is an explicit `null`, never 0. The step exits non-zero on any failed strategy, incomplete table
+or flow error, and when the row of the strategy used by the official Build GDS does not reproduce that run's own
+area and cell count. That baseline is read (never written) from exactly one
+`runs/wokwi/*-yosys-synthesis/{config.json,state_out.json}` of the same SHA (`SYNTH_STRATEGY`,
+`design__instance__count`, `design__instance__area`; positive, finite, integer count). Nothing is hard-coded per
+RTL change, and if the official strategy changes later, that strategy is the one calibrated. It is a
+measurement, not a fit proof: a smaller area does not mean one-tile fit; only the main GDS job on the last SHA
+decides that. No config, PDK, clock, tile or exclusion is changed. `--no-run --run-dir <dir> --baseline-run <dir>`
+validates existing directories (for example a copied official run) without running the flow.
+
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
 non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty

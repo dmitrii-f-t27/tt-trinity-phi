@@ -44,6 +44,29 @@ jobs:
           path: area-profile/
           if-no-files-found: error
 
+      # Measurement only, NOT a fit proof. Runs the official LibreLane 3.0.14 built-in SynthesisExploration
+      # flow (AREA 0..3, DELAY 0..4: Yosys.Synthesis, CheckSDC, STAPrePNR) on the SAME src/config_merged.json,
+      # PDK and cell exclusions, in its own run directory (runs/wokwi is untouched). The built-in flow can exit
+      # 0 with a failed strategy hidden inside, so test/synth_explore.py rebuilds the nine rows from the real
+      # step states and fails (non-zero) on any incomplete table, failed strategy, or when the row of the
+      # strategy used by the official Build GDS does not reproduce that run's own area and cell count (the
+      # baseline is read from runs/wokwi, nothing is hard-coded). A red Build GDS stays red whatever this
+      # step does.
+      - name: Official synthesis strategies (measurement)
+        if: always()
+        timeout-minutes: 30
+        run: python3 test/synth_explore.py --out synth-explore-out
+
+      - name: Upload the synthesis strategies
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SYNTH_EXPLORE
+          path: |
+            synth-explore-out/
+            runs/synth-explore/
+          if-no-files-found: error
+
   precheck:
     needs: gds
     runs-on: ubuntu-24.04
