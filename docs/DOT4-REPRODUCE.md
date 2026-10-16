@@ -279,6 +279,20 @@ rows and the minimum VALID row, a candidate for the full GDS, not a winner; this
 not a fit proof. `--no-run --runs-root <dir> --baseline-run <dir> [--path-map OLD=NEW]` validates copies and also requires
 the exit record (a missing record is a failure, never a pass); a non-empty run directory still blocks a run.
 
+## 9i. ADD zero operands through the common arithmetic (one structural candidate)
+Policy and proof boundaries: `specs/physical/gf16_dot4_addnorm_probe.t27` section 5; the numeric contract, the oracle,
+the top, the 8-clock schedule and `gf16_add_norm14` are unchanged. In `src/gf16_v2_add.v` a finite zero now enters the
+arithmetic with significand 0 (the zero flags are sorted by the same compare as the operands; every nonzero code, also
+E = 0 with M > 0, keeps its hidden 1), the far jam bit is 0 for a zero low operand, and the three separate zero output
+branches are removed; NaN, Inf and Inf - Inf keep their priority. Zero + x gives x bit for bit through the common path
+(sum = the significand of x, normaliser shift 1, no rounding, exponent E); zero + zero gives a zero sum and so +0.
+Check: `python3 test/add_zero_sweep.py --out add-zero-sweep` (CI job `unit-full`, before the unchanged full sweeps,
+artifact `add-zero-sweep`): +0 and -0 against all 65536 codes in both orders, 262144 vectors with the unit bench and
+the exact oracle, 0 mismatches required; plus a negative control in a temporary copy (the zero low operand gets the
+hidden 1 back) that must show real mismatches including 0x0000 + 0x0001 (a missing mutation text, a compile error or a
+missing result line is an error, not a kill). Limits: neither area nor timing is measured here; the effect is decided
+only by the official full mapping and the physical flow of the same commit.
+
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
 non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty

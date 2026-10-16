@@ -45,8 +45,22 @@ jobs:
       - name: Install IVerilog
         run: sudo apt-get update && sudo apt-get install -y iverilog python3
 
+      # Zero operands of the adder (policy: specs/physical/gf16_dot4_addnorm_probe.t27 section 5): +0 and -0
+      # against all 65536 codes in both orders (262144 vectors, oracle expected), and a negative control in a
+      # temporary copy that must be KILLED. Runs before, and does not replace, the full sweeps below.
+      - name: Targeted zero-operand ADD sweep with negative control
+        run: python3 test/add_zero_sweep.py --out add-zero-sweep
+
       - name: Full unit sweeps (also all 2^20 shift-and-add products vs integer product)
         run: python3 test/unit_sweeps.py --profile full --jobs 4
+
+      - name: Upload the zero-operand sweep summary and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: add-zero-sweep
+          path: add-zero-sweep/
+          if-no-files-found: error
 
   pin-rtl:
     name: Pin-level cocotb tests (RTL)

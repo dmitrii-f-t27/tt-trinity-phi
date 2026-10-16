@@ -20,7 +20,7 @@
 //     positions (d <= 12); every bit shifted out of a stage is OR-ed into one sticky bit,
 //     which is then OR-ed into bit 0 of the result (jam). For d >= 13 the whole low
 //     significand leaves the 13-bit window and the aligned operand is exactly 1 (jam of a
-//     nonzero value). For d <= 3 nothing nonzero is lost. For d >= 4 an effective
+//     nonzero value; 0 for a zero low operand). For d <= 3 nothing nonzero is lost. For d >= 4 an effective
 //     subtraction moves the leading bit by at most one place, so the jammed bit only ever
 //     sits below the rounding position and the decision on guard and "rest is nonzero" is
 //     exactly that of the true difference;
@@ -29,6 +29,14 @@
 //     single 15-bit addition whose low bit supplies the carry-in;
 //   * after the add the sum is normalised by a fixed 8/4/2/1 left-normalisation tree (module
 //     gf16_add_norm14 below, same count and word as a leading-zero encoder plus shift) and rounded.
+//   * zero operands go through the same arithmetic (no separate output path): a finite zero enters
+//     with significand 0 (every nonzero code, also E = 0 with M > 0, with its hidden 1), and the far
+//     jam bit of a zero low operand is 0. Policy and proof boundaries:
+//     specs/physical/gf16_dot4_addnorm_probe.t27 section 5. Zero + x: x is the high operand (larger
+//     {E,M}), the aligned low part is 0 for every d, tsum = {0, 1, M, 000} for add and subtract (the
+//     two's complement of 0 wraps to 0), the normaliser shifts by 1, guard/sticky are 0, so eres = E,
+//     mant = M and the result is x bit for bit. Zero + zero: tsum = 0, so +0. Checked by
+//     test/add_zero_sweep.py (both zero signs x all 65536 codes, both orders) and the full sweeps.
 //
 // Algebra (checked by test/unit_sweeps.py against the exact rational oracle, not asserted here):
 //   staged shift: the stages move by 1, 2, 4, 8 exactly when bits 0..3 of d are set, so the total
@@ -93,16 +101,21 @@ module gf16_v2_add (
     wire        sgn_big = a_big ? sa : sb;       // sign of the larger-magnitude operand
     wire        eff_sub = sa ^ sb;               // effective subtraction (order independent)
 
+    // a finite zero enters the arithmetic with significand 0, every finite nonzero code (also E = 0, M > 0)
+    // with its hidden 1; the zero flags are sorted by the same compare as the fields
+    wire        zero_hi = a_big ? zero_a : zero_b;
+    wire        zero_lo = a_big ? zero_b : zero_a;
     wire [5:0]  e_big   = mg_hi[14:9];
     wire [5:0]  e_sml   = mg_lo[14:9];
-    wire [9:0]  sig_big = {1'b1, mg_hi[8:0]};
-    wire [9:0]  sig_sml = {1'b1, mg_lo[8:0]};
+    wire [9:0]  sig_big = {~zero_hi, mg_hi[8:0]};
+    wire [9:0]  sig_sml = {~zero_lo, mg_lo[8:0]};
 
     wire [5:0]  dif  = e_big - e_sml;
     wire [12:0] bext = {sig_big, 3'b000};
     wire [12:0] sext = {sig_sml, 3'b000};
 
-    // alignment: d >= 13 -> the aligned operand is exactly 1 (everything jammed)
+    // alignment: d >= 13 -> the aligned operand is exactly 1 (everything jammed) for a nonzero low operand,
+    // exactly 0 for a zero low operand
     wire        far  = (|dif[5:4]) | (dif[3] & dif[2] & (dif[1] | dif[0]));
 
     // right shift by d (d <= 12) in stages 1, 2, 4, 8 with a sticky bit
@@ -115,7 +128,7 @@ module gf16_v2_add (
     wire [12:0] v4 = dif[3] ? {8'b0,  v3[12:8]}   : v3;
     wire        k4 = k3 | (dif[3] & (|v3[7:0]));
     wire [12:0] smj_near = {v4[12:1], v4[0] | k4};
-    wire [12:0] smj      = far ? 13'd1 : smj_near;
+    wire [12:0] smj      = far ? {12'd0, ~zero_lo} : smj_near;
 
     // ONE adder for add and subtract: bext + (smj xor eff_sub) + eff_sub, 14 bits
     wire [13:0] smj_x  = {1'b0, smj} ^ {14{eff_sub}};
@@ -148,14 +161,8 @@ module gf16_v2_add (
             result = a;
         else if (inf_b)
             result = b;
-        else if (zero_a && zero_b)
-            result = 16'h0000;
-        else if (zero_a)
-            result = b;
-        else if (zero_b)
-            result = a;
         else if (tsum == 14'd0)
-            result = 16'h0000;                     // exact cancellation
+            result = 16'h0000;                     // exact cancellation, and zero + zero
         else if (eneg || ((eres == 8'd0) && (mant == 9'd0)))
             result = 16'h0000;                     // underflow and the 2^-31 gap flush to +0
         else if (eres[6:0] >= 7'd63)
