@@ -13,7 +13,8 @@ Physical profile, chosen by the environment variable PHI_PROFILE (exact values o
   unset / "default"  1x1, clock_hz 50000000, CLOCK_PERIOD 20 (the original #100 envelope)
   "eval-1x2"         isolated evaluation: 1x2, clock_hz 25000000, CLOCK_PERIOD 40, density 65,
                      AREA 1, MFS3 False, AREA_USE_NF False, the three excluded HD delay-cell
-                     families plus exactly buf_1, clkbuf_1 and clkbuf_2 (section 9e), strict
+                     families plus exactly buf_1, clkbuf_1 and clkbuf_2 (section 9e) and exactly
+                     nor2_1 and nor2_2 (section 9f), strict
                      timing/slew/cap checker corners ["*"], CTS 20 / 50 um with the buffer list
                      [clkbuf_8, clkbuf_4] and root clkbuf_16, repair
                      margins 20 / 20 % and post-global-route repair 10 / 10 % with re-route
@@ -58,10 +59,12 @@ PROFILES = {
                    # (stricter mapping), all checkers strict, experimental CTS geometry 20 / 50 um;
                    # limits 0.75 ns / fanout 10 are not touched here
                    # sidecar section 9e: plus the exact buffer drive floor (buf_1, clkbuf_1, clkbuf_2 only;
-                   # buf_2 and up, clkbuf_4 and up stay available)
+                   # buf_2 and up, clkbuf_4 and up stay available); section 9f: plus the exact NOR2 drive
+                   # floor (nor2_1, nor2_2 only; nor2_4 / nor2_8 and the NOR2B cells are not listed here)
                    "EXTRA_EXCLUDED_CELLS": ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*",
                                             "sky130_fd_sc_hd__dlymetal*", "sky130_fd_sc_hd__buf_1",
-                                            "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2"],
+                                            "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2",
+                                            "sky130_fd_sc_hd__nor2_1", "sky130_fd_sc_hd__nor2_2"],
                    "TIMING_VIOLATION_CORNERS": ["*"], "MAX_SLEW_VIOLATION_CORNERS": ["*"],
                    "MAX_CAP_VIOLATION_CORNERS": ["*"],
                    "CTS_DISTANCE_BETWEEN_BUFFERS": 20, "CTS_CLK_MAX_WIRE_LENGTH": 50,

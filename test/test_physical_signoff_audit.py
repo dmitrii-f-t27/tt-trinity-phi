@@ -23,10 +23,15 @@ pub const SIGNOFF_ALLOWED_VIOLATIONS : u32 = 0;
 """
 
 
-# stronger buffers that the section-9e drive floor must NOT catch (buf_12 / clkbuf_16 share a prefix with
-# the excluded exact names)
+# cells that the auditor's EXTRA exclusion list (sections 9e / 9f) must NOT match: stronger buffers and NOR2
+# sizes, and a NOR2B cell (buf_12 / clkbuf_16 / nor2b_1 share a prefix with excluded exact names). This only
+# shows they are not caught by these entries; it says nothing about the official no_synth / drc_exclude
+# filters, which stay unchanged and are applied by the flow.
 ALLOWED_NETLIST = ("sky130_fd_sc_hd__buf_2 u1 (.A(a), .X(x));\nsky130_fd_sc_hd__clkbuf_4 u2 (.A(a), .X(y));\n"
-                   "sky130_fd_sc_hd__buf_12 u3 (.A(a), .X(z));\nsky130_fd_sc_hd__clkbuf_16 u4 (.A(a), .X(w));\n")
+                   "sky130_fd_sc_hd__buf_12 u3 (.A(a), .X(z));\nsky130_fd_sc_hd__clkbuf_16 u4 (.A(a), .X(w));\n"
+                   "sky130_fd_sc_hd__nor2_4 u5 (.A(a), .B(b), .Y(p));\n"
+                   "sky130_fd_sc_hd__nor2_8 u6 (.A(a), .B(b), .Y(q));\n"
+                   "sky130_fd_sc_hd__nor2b_1 u7 (.A(a), .B_N(b), .Y(r));\n")
 
 
 def write(path, data):
@@ -106,7 +111,7 @@ class AuditTests(unittest.TestCase):
         # parser check on made-up numbers only, not physical evidence
         rep = self.fx.audit()
         self.assertEqual(rep["verdict"], "PASS", rep["problems"])
-        # buf_2, clkbuf_4, buf_12 and clkbuf_16 match none of the 6 exclusion entries
+        # buf_2, clkbuf_4, buf_12, clkbuf_16, nor2_4, nor2_8 and nor2b_1 match none of the 8 exclusion entries
         self.assertEqual(rep["excluded_cell_hits"], {})
 
     def test_absent_corner_fails(self):
@@ -217,6 +222,24 @@ class AuditTests(unittest.TestCase):
                    meta={"step": "OpenROAD.STAPostPNR"})
         write(os.path.join(self.fx.sta, "config.json"), cfg)
         self.assertFails("PnR EXTRA_EXCLUDED_CELLS")
+
+    def test_each_nor2_floor_cell_in_netlist_fails(self):
+        for cell in ("sky130_fd_sc_hd__nor2_1", "sky130_fd_sc_hd__nor2_2"):
+            with self.subTest(cell=cell):
+                write(os.path.join(self.fx.run, "final", "nl", "top.nl.v"),
+                      ALLOWED_NETLIST + "%s _1809_ (.A(a), .B(b), .Y(_0364_));\n" % cell)
+                rep = self.assertFails("excluded cells still in the final netlist")
+                self.assertEqual(rep["excluded_cell_hits"], {"%s (%s) in top.nl.v" % (cell, cell): 1})
+
+    def test_list_without_nor2_floor_fails(self):
+        # the 9e list (6 entries, no NOR2 floor) is not accepted any more, in PnR and in synthesis
+        cfg = dict(psa.EXPECT_CFG, STA_CORNERS=psa.CORNERS, EXTRA_EXCLUDED_CELLS=psa.EXCLUDED[:6],
+                   meta={"step": "OpenROAD.STAPostPNR"})
+        write(os.path.join(self.fx.sta, "config.json"), cfg)
+        write(os.path.join(self.fx.run, "06-yosys-synthesis", "config.json"),
+              {"meta": {"step": "Yosys.Synthesis"}, "EXTRA_EXCLUDED_CELLS": psa.EXCLUDED[:7]})
+        rep = self.assertFails("PnR EXTRA_EXCLUDED_CELLS")
+        self.assertTrue(any("synthesis EXTRA_EXCLUDED_CELLS" in p for p in rep["problems"]))
 
     def test_missing_cts_step_fails(self):
         shutil.rmtree(self.fx.cts)

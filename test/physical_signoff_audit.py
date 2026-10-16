@@ -10,7 +10,7 @@ Step directories are found by the `meta.step` of their own config.json, not by n
   * exactly one OpenROAD.STAPostPNR step; its config: CLOCK_PERIOD 40 (25 MHz), DIE_AREA of the 1x2 template,
     MAX_TRANSITION_CONSTRAINT 0.75, MAX_FANOUT_CONSTRAINT 10, STA_CORNERS == the nine expected corners,
     EXTRA_EXCLUDED_CELLS == the three HD delay-family patterns plus exactly buf_1, clkbuf_1 and clkbuf_2
-    (section 9e; also in the Yosys.Synthesis config);
+    (section 9e) and exactly nor2_1 and nor2_2 (section 9f) (also in the Yosys.Synthesis config);
   * exactly one OpenROAD.CTS step; its config: CTS_CLK_BUFFERS == [clkbuf_8, clkbuf_4] and
     CTS_ROOT_BUFFER == clkbuf_16 (section 9e);
   * the checker steps accepted the strict corner wildcards: setup, hold, max slew and max cap all ["*"];
@@ -42,10 +42,12 @@ SIDECAR = os.path.join("specs", "physical", "gf16_dot4_sky26d_1x2_25mhz_eval.t27
 
 CORNERS = ["%s_%s" % (rc, pvt) for rc in ("nom", "min", "max")
            for pvt in ("tt_025C_1v80", "ss_100C_1v60", "ff_n40C_1v95")]
-# exclusion PATTERNS of sidecar sections 9 and 9e (fnmatch syntax, as LibreLane applies EXTRA_EXCLUDED_CELLS):
-# the three delay families and the exact buffer drive floor (buf_12 / clkbuf_16 do not match the exact names)
+# exclusion PATTERNS of sidecar sections 9, 9e and 9f (fnmatch syntax, as LibreLane applies
+# EXTRA_EXCLUDED_CELLS): the three delay families, the exact buffer drive floor and the exact NOR2 drive floor
+# (buf_12 / clkbuf_16 / nor2b_1 do not match the exact names)
 EXCLUDED = ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*", "sky130_fd_sc_hd__dlymetal*",
-            "sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2"]
+            "sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2",
+            "sky130_fd_sc_hd__nor2_1", "sky130_fd_sc_hd__nor2_2"]
 # CTS buffers of section 9e, read from the OpenROAD.CTS step config (the STAPostPNR config has no CTS keys)
 EXPECT_CTS = {"CTS_CLK_BUFFERS": ["sky130_fd_sc_hd__clkbuf_8", "sky130_fd_sc_hd__clkbuf_4"],
               "CTS_ROOT_BUFFER": "sky130_fd_sc_hd__clkbuf_16"}

@@ -4,7 +4,7 @@
   "SYNTH_STRATEGY": "AREA 1",
   "SYNTH_ABC_USE_MFS3": false,
   "SYNTH_ABC_AREA_USE_NF": false,
-  "EXTRA_EXCLUDED_CELLS": ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*", "sky130_fd_sc_hd__dlymetal*", "sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2"],
+  "EXTRA_EXCLUDED_CELLS": ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*", "sky130_fd_sc_hd__dlymetal*", "sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2", "sky130_fd_sc_hd__nor2_1", "sky130_fd_sc_hd__nor2_2"],
   "TIMING_VIOLATION_CORNERS": ["*"],
   "MAX_SLEW_VIOLATION_CORNERS": ["*"],
   "MAX_CAP_VIOLATION_CORNERS": ["*"],
