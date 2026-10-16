@@ -238,6 +238,16 @@ bit 13; `ADDNORM14_RESULT N=16384 MISMATCH=0`, also run by `test/unit_sweeps.py`
 required); the adder itself stays covered by the exact-oracle unit sweeps, the pin tests and the existing mutations.
 No area or timing is claimed before the official GDS.
 
+## 9g. Operand and readback selection as two-level 2:1 trees
+In `src/tt_um_trinity_nano.v` the operand selection (lane = `step[2:1]`) and the 16:1 readback (`ui_in[1:0]` inside
+each group of four cells, then `ui_in[3:2]` over the groups) are written as explicit balanced binary trees of 2:1
+multiplexers (nested conditional expressions on constant slices) instead of 4:1 `case` statements; the byte of cell c
+is `mem_flat[8c+7:8c]`, the indices are one to one the same as before, every selection returns a stored byte at any time
+(also while BUSY, after reset, with `ena = 0`), nothing is don't-care or X. The memory registers, write-enable decode,
+pointer, FSM, lane formula, `prod`/`acc`, RSEL output mux and the external interface are unchanged. The mutation
+`readback_group_select_swapped` now swaps the group-1 and group-2 select in the group tree. The function is the same;
+whether the area changes is decided only by the official measurement (no generic netlist count is a physical result).
+
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
 non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty

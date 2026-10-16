@@ -27,9 +27,11 @@
 //   * 16 separate byte registers, each with its OWN write enable from a two-level decode of
 //     PTR (4 + 4 one-hot lines, then one AND per byte). Every cell loads ui_in directly; there
 //     is no 128-bit indexed write.
-//   * operands: two explicit 4:1 multiplexers (lane k selects A_k and B_k) on constant slices;
+//   * operands: two explicit 4:1 selections (lane k selects A_k and B_k) written as two levels of
+//     2:1 multiplexers on constant slices;
 //   * readback: a hierarchical 16:1 byte multiplexer (4:1 inside each group of four cells, then
-//     4:1 over the groups) on constant slices. Readback returns the stored raw byte at any
+//     4:1 over the groups), each 4:1 written as two levels of 2:1 multiplexers, on constant
+//     slices. Readback returns the stored raw byte at any
 //     time, also while BUSY. No latch, no clock gating, no undriven or X value.
 `default_nettype none
 module tt_um_trinity_nano (
@@ -79,22 +81,12 @@ module tt_um_trinity_nano (
 
     // ---------------------------------------------------------------- operand select
     wire [1:0]  lane = step[2:1];
-    reg  [15:0] opa_mux;
-    reg  [15:0] opb_mux;
-    always @* begin
-        case (lane)
-            2'd0:    opa_mux = mem_flat[15:0];
-            2'd1:    opa_mux = mem_flat[31:16];
-            2'd2:    opa_mux = mem_flat[47:32];
-            default: opa_mux = mem_flat[63:48];
-        endcase
-        case (lane)
-            2'd0:    opb_mux = mem_flat[79:64];
-            2'd1:    opb_mux = mem_flat[95:80];
-            2'd2:    opb_mux = mem_flat[111:96];
-            default: opb_mux = mem_flat[127:112];
-        endcase
-    end
+    // two levels of 2:1 multiplexers (lane[0] first, then lane[1]) on constant slices; the same
+    // function as a 4:1 case on lane, written as an explicit balanced binary tree
+    wire [15:0] opa_mux = lane[1] ? (lane[0] ? mem_flat[63:48]   : mem_flat[47:32])
+                                  : (lane[0] ? mem_flat[31:16]   : mem_flat[15:0]);
+    wire [15:0] opb_mux = lane[1] ? (lane[0] ? mem_flat[127:112] : mem_flat[111:96])
+                                  : (lane[0] ? mem_flat[95:80]   : mem_flat[79:64]);
     wire [15:0] opa = opa_mux;
     wire [15:0] opb = opb_mux;
 
@@ -146,23 +138,18 @@ module tt_um_trinity_nano (
     // ---------------------------------------------------------------- read mux (uo_out)
     wire [7:0] status = {ptr, 1'b0, err, done, busy};
 
-    // hierarchical 16:1 readback: 4:1 inside each group of four cells, then 4:1 over groups
-    reg [7:0] rb0, rb1, rb2, rb3;
-    reg [7:0] rb;
-    always @* begin
-        case (ui_in[1:0])
-            2'd0:    begin rb0 = mem_flat[7:0];     rb1 = mem_flat[39:32];   rb2 = mem_flat[71:64];   rb3 = mem_flat[103:96];  end
-            2'd1:    begin rb0 = mem_flat[15:8];    rb1 = mem_flat[47:40];   rb2 = mem_flat[79:72];   rb3 = mem_flat[111:104]; end
-            2'd2:    begin rb0 = mem_flat[23:16];   rb1 = mem_flat[55:48];   rb2 = mem_flat[87:80];   rb3 = mem_flat[119:112]; end
-            default: begin rb0 = mem_flat[31:24];   rb1 = mem_flat[63:56];   rb2 = mem_flat[95:88];   rb3 = mem_flat[127:120]; end
-        endcase
-        case (ui_in[3:2])
-            2'd0:    rb = rb0;
-            2'd1:    rb = rb1;
-            2'd2:    rb = rb2;
-            default: rb = rb3;
-        endcase
-    end
+    // hierarchical 16:1 readback as two-level 2:1 trees: inside each group of four cells ui_in[1:0]
+    // selects (ui_in[0] first, then ui_in[1]), then ui_in[3:2] selects the group the same way. Group g
+    // holds cells 4g..4g+3; the byte of cell c is mem_flat[8c+7:8c]. Always a defined stored byte.
+    wire [7:0] rb0 = ui_in[1] ? (ui_in[0] ? mem_flat[31:24]   : mem_flat[23:16])
+                              : (ui_in[0] ? mem_flat[15:8]    : mem_flat[7:0]);
+    wire [7:0] rb1 = ui_in[1] ? (ui_in[0] ? mem_flat[63:56]   : mem_flat[55:48])
+                              : (ui_in[0] ? mem_flat[47:40]   : mem_flat[39:32]);
+    wire [7:0] rb2 = ui_in[1] ? (ui_in[0] ? mem_flat[95:88]   : mem_flat[87:80])
+                              : (ui_in[0] ? mem_flat[79:72]   : mem_flat[71:64]);
+    wire [7:0] rb3 = ui_in[1] ? (ui_in[0] ? mem_flat[127:120] : mem_flat[119:112])
+                              : (ui_in[0] ? mem_flat[111:104] : mem_flat[103:96]);
+    wire [7:0] rb  = ui_in[3] ? (ui_in[2] ? rb3 : rb2) : (ui_in[2] ? rb1 : rb0);
 
     reg  [7:0] rd;
     always @* begin
