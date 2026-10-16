@@ -97,10 +97,10 @@ jobs:
           python3 diagnostics/stage41/summarize.py --obs "$RUNNER_TEMP/s41-obs" \
             --runs "$RUNNER_TEMP/s41/extract/runs" --fetch-report diag-out/fetch-report.json --out diag-out
 
-      # Sidecar section 9c: the archived FINAL database with the stage-41 config, global-route estimate (C1) then
-      # the final SPEF files (C2) in the same process; and the read-only stage-39 metadata (C3). A derived state
+      # Sidecar sections 9c / 9d: the archived FINAL database with the stage-41 config, global-route estimate (C1)
+      # and, in a separate fresh process, only the final SPEF files (C2); and the stage-39 metadata (C3). A derived state
       # holding only the parent "odb" is written to the output directory; no archived file is written.
-      - name: Paired C1/C2 observation of the final database (no network, archive and PDK read-only)
+      - name: C1 global-route observation of the final database (no network, archive and PDK read-only)
         if: ${{ !cancelled() && steps.fetch.outcome == 'success' && steps.image.outcome == 'success' && steps.pdk.outcome == 'success' }}
         run: |
           set -euo pipefail
@@ -114,6 +114,22 @@ jobs:
             "$IMAGE" python3 /diag/measure_step.py --mode paired \
               --config "$STAGE41/config.json" --state-in "$RUNS_MOUNT/wokwi/56-openroad-stapostpnr/state_in.json" \
               --pdk-root "$PDK_ROOT/ciel/sky130/versions/$PDK_VERSION" --tcl /diag/paired.tcl --out /obs
+
+      # Section 9d: C2 in a separate fresh process on the same final database, SPEF only (no global-route estimate)
+      - name: C2 cold-process SPEF calibration of the final database (no network, archive and PDK read-only)
+        if: ${{ !cancelled() && steps.fetch.outcome == 'success' && steps.image.outcome == 'success' && steps.pdk.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/s41-c2"
+          docker run --rm --network none --platform linux/amd64 \
+            -v "$RUNNER_TEMP/s41/extract/runs:$RUNS_MOUNT:ro" \
+            -v "$GITHUB_WORKSPACE/src:$WORK_ROOT/src:ro" \
+            -v "$PDK_ROOT:$PDK_ROOT:ro" \
+            -v "$GITHUB_WORKSPACE/diagnostics/stage41:/diag:ro" \
+            -v "$RUNNER_TEMP/s41-c2:/obs" \
+            "$IMAGE" python3 /diag/measure_step.py --mode c2 \
+              --config "$STAGE41/config.json" --state-in "$RUNS_MOUNT/wokwi/56-openroad-stapostpnr/state_in.json" \
+              --pdk-root "$PDK_ROOT/ciel/sky130/versions/$PDK_VERSION" --tcl /diag/c2.tcl --out /obs
 
       - name: C3 read-only metadata of the stage-39 database (no network, archive and PDK read-only)
         if: ${{ !cancelled() && steps.fetch.outcome == 'success' && steps.image.outcome == 'success' && steps.pdk.outcome == 'success' }}
@@ -135,10 +151,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p diag-out/paired-summary
-          for d in s41-paired s41-c3; do
+          for d in s41-paired s41-c2 s41-c3; do
             if [ -d "$RUNNER_TEMP/$d" ]; then cp -r "$RUNNER_TEMP/$d" "diag-out/$d"; fi
           done
-          python3 diagnostics/stage41/summarize_paired.py --paired "$RUNNER_TEMP/s41-paired" \
+          python3 diagnostics/stage41/summarize_paired.py --paired "$RUNNER_TEMP/s41-paired" --c2 "$RUNNER_TEMP/s41-c2" \
             --c3 "$RUNNER_TEMP/s41-c3" --c0 "$RUNNER_TEMP/s41-obs" \
             --runs "$RUNNER_TEMP/s41/extract/runs" --fetch-report diag-out/fetch-report.json \
             --out diag-out/paired-summary

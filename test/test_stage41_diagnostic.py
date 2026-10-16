@@ -349,37 +349,85 @@ class PairedSpefTests(unittest.TestCase):
         self.assertEqual(sum("reader warning" in p for p in probs), 9)
 
 
-def good_prov(mode="paired"):
+def good_prov(mode="c2", instance="a" * 32):
     h = {k: "%064x" % i for i, k in enumerate(["config", "state_in", "tcl", "records_tcl", "drivers", "odb",
                                                 "derived_state"])}
-    if mode == "paired":
+    if mode == "c2":
         h.update({"spef_" + rc.lower(): v for rc, v in c.SPEF_SHA256.items()})
     return {"status": "PASS", "mode": mode, "hash_before": dict(h), "hash_after": dict(h),
-            "derived_state": {"parent": "p", "kept": ["odb"], "dropped": ["spef"]}}
+            "derived_state": {"parent": "p", "kept": ["odb"], "dropped": ["spef"]},
+            "process": {"instance": instance, "pid": 1}}
 
 
 class ProvenanceTests(unittest.TestCase):
     def test_unchanged_sources_accepted(self):
-        self.assertEqual(sp.check_provenance("paired", good_prov(), "paired"), [])
+        self.assertEqual(sp.check_provenance("c2", good_prov(), "c2"), [])
+        self.assertEqual(sp.check_provenance("paired", good_prov("paired"), "paired"), [])
         self.assertEqual(sp.check_provenance("c3", good_prov("c3"), "c3"), [])
 
     def test_changed_source_fails(self):
         p = good_prov()
         p["hash_after"]["odb"] = "f" * 64
-        self.assertTrue(any("odb changed" in x for x in sp.check_provenance("paired", p, "paired")))
+        self.assertTrue(any("odb changed" in x for x in sp.check_provenance("c2", p, "c2")))
 
     def test_missing_model_hash_or_wrong_spef_fails(self):
         p = good_prov()
         del p["hash_before"]["spef_max"]
-        self.assertTrue(any("spef_max hash not recorded" in x for x in sp.check_provenance("paired", p, "paired")))
+        self.assertTrue(any("spef_max hash not recorded" in x for x in sp.check_provenance("c2", p, "c2")))
         p = good_prov()
         p["hash_before"]["spef_min"] = p["hash_after"]["spef_min"] = c.SPEF_SHA256["MAX"]
-        self.assertTrue(any("MIN SPEF" in x for x in sp.check_provenance("paired", p, "paired")))
+        self.assertTrue(any("MIN SPEF" in x for x in sp.check_provenance("c2", p, "c2")))
+
+    def test_wrong_mode_fails(self):
+        self.assertTrue(any("mode" in x for x in sp.check_provenance("c2", good_prov("paired"), "c2")))
 
     def test_derived_state_must_keep_only_odb(self):
         p = good_prov()
         p["derived_state"]["kept"] = ["odb", "spef"]
-        self.assertTrue(sp.check_provenance("paired", p, "paired"))
+        self.assertTrue(sp.check_provenance("c2", p, "c2"))
+
+
+class SeparateProcessTests(unittest.TestCase):
+    C1_LOG = "\n".join(["PAIRED_HAVE_ROUTES 1", "PAIRED_C1_MODE HISTORIC_ROUTES_FROM_ODB",
+                        paired_kind("C1", "max_ss_100C_1v60", "slew"), "PAIRED_DONE"])
+    C2_LOG = "\n".join(["PAIRED_C2_MODEL SPEF_ONLY_COLD_PROCESS", "PAIRED_SPEF_BEGIN max_ss_100C_1v60 MAX /r/max.spef",
+                        "PAIRED_SPEF_END max_ss_100C_1v60", paired_kind("C2", "max_ss_100C_1v60", "slew"), "C2_DONE"])
+
+    def test_separate_logs_accepted(self):
+        self.assertEqual(sp.check_logs(self.C1_LOG, self.C2_LOG), [])
+
+    def test_old_same_process_log_rejected(self):
+        # the f2421e7 shape: C2 blocks after C1 in one log
+        same = self.C1_LOG + "\n" + self.C2_LOG
+        probs = sp.check_logs(same, same)
+        self.assertTrue(any("C1 log contains C2" in p for p in probs))
+        self.assertTrue(any("C2 log contains C1" in p for p in probs))
+
+    def test_c2_without_cold_model_or_done_fails(self):
+        probs = sp.check_logs(self.C1_LOG, self.C2_LOG.replace("PAIRED_C2_MODEL SPEF_ONLY_COLD_PROCESS\n", ""))
+        self.assertTrue(any("SPEF_ONLY_COLD_PROCESS" in p for p in probs))
+        probs = sp.check_logs(self.C1_LOG, self.C2_LOG.replace("C2_DONE", ""))
+        self.assertTrue(any("C2_DONE" in p for p in probs))
+
+    def test_distinct_processes_same_sources(self):
+        p1, p2 = good_prov("paired", "a" * 32), good_prov("c2", "b" * 32)
+        self.assertEqual(sp.check_processes(p1, p2), [])
+        self.assertTrue(any("distinct" in x for x in sp.check_processes(p1, good_prov("c2", "a" * 32))))
+        p2["hash_before"]["odb"] = p2["hash_after"]["odb"] = "e" * 64
+        self.assertTrue(any("source odb differs" in x for x in sp.check_processes(p1, p2)))
+        p3 = good_prov("c2", "c" * 32)
+        p3["hash_before"]["config"] = p3["hash_after"]["config"] = "d" * 64
+        self.assertTrue(any("source config differs" in x for x in sp.check_processes(p1, p3)))
+
+    def test_same_geometry_across_processes(self):
+        names = ("paired-c1-before", "paired-c1-after", "c2-before", "c2-after")
+        rec = s.parse_records(RecordTests.TSV)
+        recs = {n: rec for n in names}
+        self.assertEqual(sp.same_geometry(recs, names), [])
+        moved = s.parse_records(RecordTests.TSV.replace("\t30\t20\t", "\t31\t20\t"))
+        self.assertTrue(sp.same_geometry(dict(recs, **{"c2-after": moved}), names))
+        self.assertTrue(any("missing" in p for p in sp.same_geometry(
+            {n: rec for n in names[:3]}, names)))
 
     def test_pinned_archive_files(self):
         used = dict(c.PINNED_STATES)

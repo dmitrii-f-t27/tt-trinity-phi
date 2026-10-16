@@ -13,9 +13,11 @@ must come back unchanged, the effective SDC must be the pinned base.sdc (sha256)
 the pinned PDK version.
 Modes (sidecar 9b / 9c):
   c0      --state-in is the stage-41 OUTPUT state (used as is); observe.tcl.
-  paired  --state-in is the archived stage-56 INPUT state; a derived state holding ONLY its "odb" (the final
-          database the official STA used) is written to OUT and loaded, so no SPEF is read automatically;
-          the 3 final SPEF paths of the parent state are passed explicitly; paired.tcl.
+  paired  C1 only (sidecar 9d): --state-in is the archived stage-56 INPUT state; a derived state holding ONLY
+          its "odb" (the final database the official STA used) is written to OUT and loaded, so no SPEF is
+          read; global-route estimate; paired.tcl.
+  c2      a separate fresh process on the same derived state: the 3 final SPEF paths of the parent state are
+          passed explicitly and read cold, with no global-route estimate; c2.tcl.
   c3      --state-in is the stage-41 INPUT state; derived state with only its "odb" (stage 39); c3.tcl.
 Usage: python3 measure_step.py --mode M --config C --state-in S --pdk-root P --tcl T --out DIR
 """
@@ -25,6 +27,7 @@ import json
 import os
 import shutil
 import sys
+import uuid
 from decimal import Decimal
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -45,9 +48,10 @@ EXPECT_PATHS = {"PDK_ROOT": c.PDK_VERSION_ROOT, "DESIGN_DIR": c.WORK_ROOT + "/sr
 CORNERS = c.CORNERS
 EXCLUDED = ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*", "sky130_fd_sc_hd__dlymetal*"]
 RECORDS = {"c0": ["stage41-design-before.tsv", "stage41-design-after.tsv"],
-           "paired": ["paired-c1-before.tsv", "paired-c1-after.tsv", "paired-c2-after.tsv"],
+           "paired": ["paired-c1-before.tsv", "paired-c1-after.tsv"],
+           "c2": ["c2-before.tsv", "c2-after.tsv"],
            "c3": ["c3-design.tsv"]}
-PARENT_STATE = {"paired": c.STATE56_IN, "c3": c.STATE41_IN}
+PARENT_STATE = {"paired": c.STATE56_IN, "c2": c.STATE56_IN, "c3": c.STATE41_IN}
 DRIVERS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "final_slew_drivers.json")
 
 
@@ -76,7 +80,9 @@ def main():
         ap.add_argument(a, required=True)
     ap.add_argument("--mode", choices=sorted(RECORDS), default="c0")
     args = ap.parse_args()
-    prov = {"problems": [], "pdk_root_arg": args.pdk_root, "mode": args.mode}
+    # process identity, so that separate observation processes can be told apart in the summary
+    prov = {"problems": [], "pdk_root_arg": args.pdk_root, "mode": args.mode,
+            "process": {"instance": uuid.uuid4().hex, "pid": os.getpid()}}
     if os.path.normpath(args.pdk_root) != c.PDK_VERSION_ROOT:
         prov["problems"].append("--pdk-root %r is not the pinned PDK version directory" % args.pdk_root)
 
@@ -138,7 +144,7 @@ def main():
         prov["derived_state"] = {"parent": args.state_in, "kept": ["odb"],
                                  "dropped": sorted(k for k in state_json if k != "odb")}
         inputs["derived_state"] = load_state
-    if args.mode == "paired":
+    if args.mode == "c2":
         spef = state_json.get("spef") or {}
         for rc in ("NOM", "MIN", "MAX"):
             path = spef.get("%s_*" % rc.lower())
@@ -151,7 +157,7 @@ def main():
         return done()
     prov["hash_before"] = {k: sha(v) for k, v in inputs.items()}
     for rc in ("NOM", "MIN", "MAX"):
-        if args.mode == "paired" and prov["hash_before"]["spef_" + rc.lower()] != c.SPEF_SHA256[rc]:
+        if args.mode == "c2" and prov["hash_before"]["spef_" + rc.lower()] != c.SPEF_SHA256[rc]:
             prov["problems"].append("%s SPEF sha256 differs from the pinned value" % rc)
     prov["extra_env"] = extra_env
     if prov["problems"]:
