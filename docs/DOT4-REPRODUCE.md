@@ -248,6 +248,27 @@ pointer, FSM, lane formula, `prod`/`acc`, RSEL output mux and the external inter
 `readback_group_select_swapped` now swaps the group-1 and group-2 select in the group tree. The function is the same;
 whether the area changes is decided only by the official measurement (no generic netlist count is a physical result).
 
+## 9h. Official ABC area knobs (CI, after SYNTH9)
+`gds.yaml` runs `python3 test/synth_area_tune.py` (`if: always()`, artifact `AREA_TUNE`) before the long physical-model
+simulation: twelve sequential synthesis-only runs of the official LibreLane 3.0.14 (`--docker-no-tty` before
+`--dockerized`, `--flow Classic --to Yosys.Synthesis`) on the same `src/config_merged.json`, sources, PDK, exclusion union
+and 20 ns clock, changing only `SYNTH_STRATEGY` (AREA 0 / AREA 1 / AREA 2; AREA 1 is the best strategy of the last full
+official SYNTH9 table), `SYNTH_ABC_USE_MFS3` (adds `mfs3 -aemvz -I 4 -O 2`) and
+`SYNTH_ABC_AREA_USE_NF` (area mapper `&nf -R 1000` instead of `amap`); no linter flag, exclusion, clock or design change.
+The strategy and both knob values of the CURRENT official run (`runs/wokwi`) must be one of these three strategies and real
+booleans; the matching row must reproduce the official cell count, area and per-type counts, and every row is checked
+against the official provenance (exclusion files, raw filtered library, PDK, versions, Yosys creator) and against its own
+step configuration and generated ABC script, so a knob that did not take effect fails the row. Rows are checked like the
+block profile (known library cells, finite positive areas, weighted area equal to stat and state). A tool error, an
+unsupported option or a missing metric is an explicit failed row with null numbers; any incomplete table, calibration or
+provenance mismatch fails the step. The tool exit code is part of every row: after each run the script writes its own small
+record `PHI_TOOL_EXIT.json` (rc, command, `GITHUB_SHA` when set) into that run's directory, after the tool finished, and a
+row is valid only if that record exists with rc 0; a failed row keeps any partly written numbers only under
+`raw_measurements`, its public area/cell fields are null, and it can never be the minimum row. The summary lists the twelve
+rows and the minimum VALID row, a candidate for the full GDS, not a winner; this is an area-only diagnosis, not timing and
+not a fit proof. `--no-run --runs-root <dir> --baseline-run <dir> [--path-map OLD=NEW]` validates copies and also requires
+the exit record (a missing record is a failure, never a pass); a non-empty run directory still blocks a run.
+
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
 non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty

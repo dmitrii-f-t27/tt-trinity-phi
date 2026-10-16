@@ -67,6 +67,27 @@ jobs:
             runs/synth-explore/
           if-no-files-found: error
 
+      # Area-only measurement, NOT timing and NOT a fit proof. Twelve sequential synthesis-only runs of the
+      # official LibreLane 3.0.14 (Classic flow stopped after Yosys.Synthesis) on the same config, sources, PDK and
+      # exclusions; only SYNTH_STRATEGY (AREA 0/1/2), SYNTH_ABC_USE_MFS3 and SYNTH_ABC_AREA_USE_NF change. The row
+      # that matches the current official run must reproduce it; every row is checked against the official
+      # provenance. A tool error, an unsupported option, an incomplete table or a mismatch fails this step; a red
+      # Build GDS stays red whatever this step does. It runs before the long simulation so the numbers arrive early.
+      - name: Official ABC area knobs (measurement)
+        if: always()
+        timeout-minutes: 60
+        run: python3 test/synth_area_tune.py --out area-tune-out
+
+      - name: Upload the ABC area knobs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AREA_TUNE
+          path: |
+            area-tune-out/
+            runs/area-tune/
+          if-no-files-found: error
+
       # Technology-branch check of the multiplier, NOT a layout/LVS proof and NOT a fit proof. The
       # official synthesis maps the 3-term carry-save positions to sky130_fd_sc_hd__fa_1 (selected by
       # the flow's __pnr__ define); this step simulates that branch with the real PDK Verilog models of the
