@@ -126,7 +126,33 @@ def workflows():
             fail("%s uses continue-on-error" % name)
 
 
+def yaml_guard():
+    """Workflow files that this project owns must parse. Stdlib check for the classic mistake (an
+    unquoted `name:` value containing `: ` or ` #`), plus a full parse when PyYAML is installed."""
+    for name in ("test.yaml", "docs.yaml", "gds.yaml", "no_star.yaml"):
+        path = os.path.join(ROOT, ".github", "workflows", name)
+        if not os.path.isfile(path):
+            continue
+        text = read(path)
+        for n, line in enumerate(text.splitlines(), 1):
+            m = re.match(r"^\s*(?:-\s*)?name:\s*(.+?)\s*$", line)
+            if not m:
+                continue
+            val = m.group(1)
+            if val[0] not in "\"'" and (": " in val or " #" in val):
+                fail("%s:%d unquoted name value contains ': ' or ' #' (YAML scalar error): %s" % (name, n, val))
+        try:
+            import yaml  # optional
+        except ImportError:
+            continue
+        try:
+            yaml.safe_load(text)
+        except yaml.YAMLError as e:
+            fail("%s does not parse as YAML: %s" % (name, e))
+
+
 def main():
+    yaml_guard()
     top, info_files, tiles, clock, pins = info_yaml()
     make_files = makefile_sources()
     mods = module_map()

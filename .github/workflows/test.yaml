@@ -96,6 +96,49 @@ jobs:
       - name: Fail-closed Yosys audit
         run: python3 test/synth_audit.py
 
+  t27-native:
+    name: "Native t27c gate (pinned t27, verified Zig 0.16.0): parse, typecheck, test-report, seal"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout this project (the spec lives in its own specs/ tree)
+        uses: actions/checkout@v4
+
+      # The t27 toolchain goes into a SEPARATE folder; it never replaces this project's workspace.
+      - name: Checkout the pinned t27 toolchain source
+        uses: actions/checkout@v4
+        with:
+          repository: gHashTag/t27
+          ref: 32c25e8798e33e03d5f6e7aee876df8629008a49
+          path: t27-src
+
+      - name: Build t27c from the pinned commit (locked)
+        run: |
+          set -euo pipefail
+          cd t27-src
+          cargo build --release -p t27c --locked
+          test -x target/release/t27c
+
+      - name: Fetch Zig 0.16.0 from the official vendor and verify it (index size and sha256)
+        run: python3 test/fetch_zig.py --version 0.16.0 --dest "$RUNNER_TEMP/zig" --path-file "$GITHUB_PATH"
+
+      - name: Native parse, typecheck, test-report, seal --save and --verify (no --force)
+        run: |
+          set -euo pipefail
+          test -z "${T27C_TEST_REPORT_EXIT_ZERO:-}"
+          python3 test/t27_native_gate.py \
+            --t27c "$GITHUB_WORKSPACE/t27-src/target/release/t27c" \
+            --spec specs/numeric/gf16_dot4_sky26d.t27 \
+            --out native-t27
+
+      - name: Upload the native outputs and the seal for review (not auto-committed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t27-native-gate
+          path: native-t27/
+          if-no-files-found: error
+
   # ---- compatibility jobs kept from the archived baseline (they test archived files) ----
   gf16-fix-verify:
     name: GF16 v2 arithmetic fix verification (archived comparison, faithful check)

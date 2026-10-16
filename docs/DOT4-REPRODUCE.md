@@ -59,7 +59,7 @@ python3 test/check_results.py test/results.xml test/test.py
 ```
 python3 test/mutation_runner.py       # inside the cocotb venv; copies src/ and test/ to a temp dir
 ```
-It first requires the unmodified RTL to pass all tests, then applies 11 mutations to the temporary
+It first requires the unmodified RTL to pass all tests, then applies 15 mutations (the 11 original ones plus four for the explicit write enables, the readback group select, the staged alignment sticky and a too-low far-alignment threshold; a mutation that cannot change the GF16 result, such as turning the far jam 1 into 0, is deliberately NOT included because an equivalent mutant cannot be killed) to the temporary
 copy (B forced to 0, wrong `uio_oe`, signature shown as a result, result visible while busy, ERR never
 set, WR/GO priority swapped, `ena` ignored, GO not resetting PTR, wrong MUL tie, wrong ADD tie, no sticky
 bit) and requires every one to be KILLED by a PINFAIL; a surviving mutation or an infrastructure error
@@ -82,6 +82,35 @@ check: it runs only on the default branch (`main`) of whichever repository runs 
 every other branch (no `continue-on-error`, nothing masked). On the `main` of a fork it does run, and
 whether Pages is configured there is not verified. A skipped viewer is not a physical pass and not a
 failure; a green `gds` + `precheck` + `gl_test` is what counts.
+
+## 8. Native t27 toolchain gate (CI only; local build not required)
+Job `t27-native` in `test.yaml` runs the REAL `t27c`, not the Python adapter. It checks out the pinned t27
+commit `32c25e8798e33e03d5f6e7aee876df8629008a49` into `t27-src/` (a separate folder), builds
+`cargo build --release -p t27c --locked`, fetches Zig 0.16.0 with `python3 test/fetch_zig.py --version 0.16.0
+--dest "$RUNNER_TEMP/zig" --path-file "$GITHUB_PATH"` (verifies size and SHA-256 against
+`https://ziglang.org/download/index.json`, prints the verified version and digest, changes PATH for that job
+only), then runs `python3 test/t27_native_gate.py --t27c t27-src/target/release/t27c --spec
+specs/numeric/gf16_dot4_sky26d.t27 --out native-t27`, which executes, from this repository's root:
+`t27c parse SPEC`, `t27c typecheck SPEC`, `t27c test-report SPEC --specs-dir specs --verbose`,
+`t27c seal SPEC --save`, `t27c seal SPEC --verify`. `--force` is never used and
+`T27C_TEST_REPORT_EXIT_ZERO` must be unset. A BLOCKED run, zero tests, any failing test, a refused seal, a
+forced test record, or a `gen_hash` of `none` fails the job. The seal's `tests.vacuous` is an INTEGER (the
+number of passing tests that executed zero RUNTIME asserts; compile-time assertions are checked by the Zig
+compiler instead), so it is validated as a non-negative integer and reported as `vacuous of total`, not treated
+as a flag. What must hold instead is a negative control of the native toolchain: two copies of the spec, each
+with ONE existing assertion made false, must still parse and typecheck, and `test-report` on each must either
+FAIL (exit 1, FAIL >= 1) or be rejected by the compiler with the specific message of a false assertion
+(BLOCKED, `does not compile` AND `assertion failed`, the text of the generated `@compileError`); any other
+compile failure (missing import, type, linker), a pass, a crash or a missing Zig fails the gate. The native counts (23 `test` blocks) and the runtime-assert counters are different
+from the 112 assertions executed by `test/t27_exec.py`; they are reported separately and are not added up. The native outputs and the seal JSON are
+uploaded as the artifact `t27-native-gate`; the seal is NOT committed automatically; a person reviews the
+artifact first. `python3 test/t27_exec.py` (28 blocks) remains a separate cross-check, not the seal.
+
+## 9. Datasheet preview (CI)
+After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
+non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty
+PNG per page and uploads the artifact `DocsPreview` (page images and `pdfinfo.txt`) for a visual check. It does
+not replace or weaken the official docs job; a local render is not needed.
 
 ## Archived comparison jobs
 `test/gf16_v2_verify.py`, `test/width_gate.py`, `test/gf_add_sweep.py`, `test/phi_audit.py` test archived
