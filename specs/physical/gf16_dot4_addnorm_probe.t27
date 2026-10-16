@@ -103,6 +103,42 @@ module physical-gf16_dot4_addnorm_probe;
 // 0x0000 + 0x0001), 0 mismatches; a negative control in a temporary copy (the low significand of a zero gets
 // the hidden 1 back) that must produce a real mismatch, in particular on 0x0000 + 0x0001; then the unchanged
 // full unit sweeps, pin tests and mutation controls.
+//
+// ============================================================================
+// 6. Structural candidate: the ADD significand sum on the existing full-adder wrapper (policy, before RTL)
+// ============================================================================
+//
+// Acceptance is UNCHANGED (numeric contract, oracle, 8 enabled clocks E1..E8, 1x1 at 20 ns). Facts before this
+// candidate (commit 74ab861, official): raw synthesis 1312 cells / 16777.3408 um2, first failure
+// 28-openroad-globalplacement GPL-0301 at 116.207 %, still a FAIL. The saving of THIS candidate is not measured;
+// the area of the wrapper cell (fa_1 20.0192 um2 in the filtered library) times a cell count is not a saving.
+//
+// The 74ab861 sum (src/gf16_v2_add.v before this candidate): sum15 = {1'b0, bext, 1'b1} + {smj_x, eff_sub}, tsum = sum15[14:1], with
+// X = {1'b0, bext} and Y = smj_x (14 bits each), c = eff_sub. The two 15-bit operands are 2X + 1 and 2Y + c, so
+// their sum is 2 (X + Y + c) + (1 - c): bit 0 is 1 - c and bits [15:1] hold X + Y + c. Keeping 15 bits keeps
+// bits [14:1], i.e. tsum = (X + Y + c) mod 2^14: bit 0 of the 15-bit addition only passes eff_sub as the
+// carry into the upper 14 bits, and the carry out of bit 13 is dropped, as before.
+// The candidate writes exactly this 14-bit sum as an explicit ripple chain with carry seed c = eff_sub:
+//   * constant bits of X: X[2:0] = 0 (the three guard zeros of bext) and X[13] = 0 (the leading zero);
+//     bits 0..2 have two variable inputs (Y[i] and the carry): half adder written as xor/and; bit 13 has two
+//     (Y[13] and the carry): xor, its carry out is dropped;
+//   * bits 3..12 have three variable inputs (X[i] = bext[i], which includes the hidden bit ~zero_hi at bit 12,
+//     Y[i], carry): one gf16_fa1 each, the wrapper of src/gf16_sig_mul10.v (generic logic in simulation, the
+//     fa_1 cell under __pnr__ / PHI_FA_PHYS); the wrapper itself is not changed;
+//   * nothing else changes: zero flags and their sort, alignment, far jam, gf16_add_norm14, RNE, packing and
+//     the special-value priority are the 74ab861 logic; no second full sum stays behind a multiplexer.
+// Checks (written with the RTL change, run only by CI):
+//   * generic branch: the targeted zero sweep (262144 vectors) and its hidden-1 control stay; a new
+//     deterministic adversarial set (cancellation, borrow, different signs, carry, ties, far jam, edge
+//     exponents, NaN / Inf, zeros, plus the ADD steps of the existing DOT4 conformance vectors) must give 0
+//     mismatches against the unchanged oracle, and a temporary copy with a wrong carry seed (0 instead of
+//     eff_sub) must give a real mismatch on two finite nonzero operands of different sign; the full unit
+//     sweeps, the 14 pin tests and the 18 mutation controls stay as they are;
+//   * technology branch (after Build GDS, real models of the pinned PDK, -DPHI_FA_PHYS): the old 8 truth
+//     cases, all 2^20 products and the swapped-output control stay; the active ADD is added with the zero
+//     set (262144) and the adversarial set, 0 mismatches, exact counts; the same wrong-seed copy must
+//     mismatch there too. A missing PDK model, tool, count or a non-zero exit is a FAIL. This is a model
+//     simulation, not STA, LVS or GDS.
 
 pub const PROBE_COUNT : u16 = 5;
 pub const NORM_X_WIDTH : u16 = 14;
