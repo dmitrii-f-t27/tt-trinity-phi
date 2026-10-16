@@ -36,9 +36,17 @@ ADD = "gf16_v2_add.v"
 # (name, file, old text, new text, tests of which at least one must fail with PINFAIL)
 MUTATIONS = [
     ("B_forced_to_zero", TOP,
-     "wire [15:0] opb  = mem[{1'b1, lane, 4'b0000} +: 16];",
-     "wire [15:0] opb  = 16'h0000;",
+     "wire [15:0] opb = opb_mux;",
+     "wire [15:0] opb = 16'h0000;",
      ["test_02_selftest_47c0_8_clocks", "test_03_independent_ab_conformance"]),
+    ("write_enables_not_one_hot", TOP,
+     "wire       we = wr_accept & dec_hi[HI] & dec_lo[LO];",
+     "wire       we = wr_accept & dec_hi[HI];",
+     ["test_04_readback_all_cells", "test_05_pointer_wrap_and_go_resets_ptr"]),
+    ("readback_group_select_swapped", TOP,
+     "2'd1:    rb = rb1;",
+     "2'd1:    rb = rb2;",
+     ["test_04_readback_all_cells", "test_05_pointer_wrap_and_go_resets_ptr"]),
     ("wrong_uio_oe", TOP,
      "assign uio_oe  = 8'h00;", "assign uio_oe  = 8'hFF;",
      ["test_01_reset_state"]),
@@ -68,8 +76,19 @@ MUTATIONS = [
      "g & (rest | lsb)", "g & (rest | 1'b1)",
      ["test_03_independent_ab_conformance"]),
     ("add_without_sticky_jam", ADD,
-     "{shf[12:1], shf[0] | stk}", "{shf[12:1], shf[0]}",
+     "{v4[12:1], v4[0] | k4}", "{v4[12:1], v4[0]}",
      ["test_03_independent_ab_conformance"]),
+    ("add_stage_sticky_dropped_in_stage_8", ADD,
+     "wire        k4 = k3 | (dif[3] & (|v3[7:0]));",
+     "wire        k4 = k3;",
+     ["test_03_independent_ab_conformance", "test_14_random_vectors"]),
+    # Wrong far threshold (>= 8 instead of >= 13). NOT an equivalent mutant: 0x3E01 + 2^-10
+    # (exponent difference 10) must round to 0x3E02; far alignment would turn the half-ulp
+    # contribution into 1 and give 0x3E01 (vector add_tie_rounds_to_even_up).
+    ("add_far_threshold_too_low", ADD,
+     "wire        far  = (|dif[5:4]) | (dif[3] & dif[2] & (dif[1] | dif[0]));",
+     "wire        far  = (|dif[5:4]) | dif[3];",
+     ["test_03_independent_ab_conformance", "test_14_random_vectors"]),
 ]
 
 

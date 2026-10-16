@@ -22,6 +22,15 @@
 // WR and GO rising in the same idle clock: WR is accepted, GO is ignored, no flag.
 // While BUSY, WR and GO rising edges are ignored and set the sticky ERR (cleared by an
 // accepted GO and by reset). An accepted WR clears DONE and leaves the result register.
+//
+// Structure of the memory (same observable behaviour as before, explicit logic):
+//   * 16 separate byte registers, each with its OWN write enable from a two-level decode of
+//     PTR (4 + 4 one-hot lines, then one AND per byte). Every cell loads ui_in directly; there
+//     is no 128-bit indexed write.
+//   * operands: two explicit 4:1 multiplexers (lane k selects A_k and B_k) on constant slices;
+//   * readback: a hierarchical 16:1 byte multiplexer (4:1 inside each group of four cells, then
+//     4:1 over the groups) on constant slices. Readback returns the stored raw byte at any
+//     time, also while BUSY. No latch, no clock gating, no undriven or X value.
 `default_nettype none
 module tt_um_trinity_nano (
     input  wire [7:0] ui_in,
@@ -34,7 +43,6 @@ module tt_um_trinity_nano (
     input  wire       rst_n
 );
 
-    reg [127:0] mem;
     reg [3:0]   ptr;
     reg [2:0]   step;
     reg         busy;
@@ -48,19 +56,56 @@ module tt_um_trinity_nano (
     wire wr_rise = uio_in[0] & ~wr_q;
     wire go_rise = uio_in[1] & ~go_q;
 
-    // operands of lane step[2:1]: A_k at bit offset 16k, B_k at bit offset 64 + 16k
+    // ---------------------------------------------------------------- memory cells
+    wire        wr_accept = ena & ~busy & wr_rise;      // an accepted write (WR wins over GO)
+    wire [3:0]  dec_lo = {ptr[1:0] == 2'd3, ptr[1:0] == 2'd2, ptr[1:0] == 2'd1, ptr[1:0] == 2'd0};
+    wire [3:0]  dec_hi = {ptr[3:2] == 2'd3, ptr[3:2] == 2'd2, ptr[3:2] == 2'd1, ptr[3:2] == 2'd0};
+    wire [127:0] mem_flat;                              // cell g occupies bits [8g+7:8g]
+
+    genvar g;
+    generate
+        for (g = 0; g < 16; g = g + 1) begin : g_cell
+            localparam integer HI = g >> 2;
+            localparam integer LO = g & 3;
+            wire       we = wr_accept & dec_hi[HI] & dec_lo[LO];
+            reg  [7:0] byte_q;
+            always @(posedge clk or negedge rst_n) begin
+                if (!rst_n)  byte_q <= 8'h00;
+                else if (we) byte_q <= ui_in;
+            end
+            assign mem_flat[(g << 3) +: 8] = byte_q;
+        end
+    endgenerate
+
+    // ---------------------------------------------------------------- operand select
     wire [1:0]  lane = step[2:1];
-    wire [15:0] opa  = mem[{1'b0, lane, 4'b0000} +: 16];
-    wire [15:0] opb  = mem[{1'b1, lane, 4'b0000} +: 16];
+    reg  [15:0] opa_mux;
+    reg  [15:0] opb_mux;
+    always @* begin
+        case (lane)
+            2'd0:    opa_mux = mem_flat[15:0];
+            2'd1:    opa_mux = mem_flat[31:16];
+            2'd2:    opa_mux = mem_flat[47:32];
+            default: opa_mux = mem_flat[63:48];
+        endcase
+        case (lane)
+            2'd0:    opb_mux = mem_flat[79:64];
+            2'd1:    opb_mux = mem_flat[95:80];
+            2'd2:    opb_mux = mem_flat[111:96];
+            default: opb_mux = mem_flat[127:112];
+        endcase
+    end
+    wire [15:0] opa = opa_mux;
+    wire [15:0] opb = opb_mux;
 
     wire [15:0] mul_y;
     wire [15:0] add_y;
     gf16_v2_mul u_mul (.a(opa), .b(opb), .result(mul_y));
     gf16_v2_add u_add (.a(acc), .b(prod), .result(add_y));
 
+    // ---------------------------------------------------------------- control
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            mem  <= 128'd0;
             ptr  <= 4'd0;
             step <= 3'd0;
             busy <= 1'b0;
@@ -86,7 +131,6 @@ module tt_um_trinity_nano (
                     done <= 1'b1;
                 end
             end else if (wr_rise) begin
-                mem[{ptr, 3'b000} +: 8] <= ui_in;
                 ptr  <= ptr + 4'd1;
                 done <= 1'b0;
             end else if (go_rise) begin
@@ -99,9 +143,28 @@ module tt_um_trinity_nano (
         end
     end
 
+    // ---------------------------------------------------------------- read mux (uo_out)
     wire [7:0] status = {ptr, 1'b0, err, done, busy};
-    reg  [7:0] rd;
 
+    // hierarchical 16:1 readback: 4:1 inside each group of four cells, then 4:1 over groups
+    reg [7:0] rb0, rb1, rb2, rb3;
+    reg [7:0] rb;
+    always @* begin
+        case (ui_in[1:0])
+            2'd0:    begin rb0 = mem_flat[7:0];     rb1 = mem_flat[39:32];   rb2 = mem_flat[71:64];   rb3 = mem_flat[103:96];  end
+            2'd1:    begin rb0 = mem_flat[15:8];    rb1 = mem_flat[47:40];   rb2 = mem_flat[79:72];   rb3 = mem_flat[111:104]; end
+            2'd2:    begin rb0 = mem_flat[23:16];   rb1 = mem_flat[55:48];   rb2 = mem_flat[87:80];   rb3 = mem_flat[119:112]; end
+            default: begin rb0 = mem_flat[31:24];   rb1 = mem_flat[63:56];   rb2 = mem_flat[95:88];   rb3 = mem_flat[127:120]; end
+        endcase
+        case (ui_in[3:2])
+            2'd0:    rb = rb0;
+            2'd1:    rb = rb1;
+            2'd2:    rb = rb2;
+            default: rb = rb3;
+        endcase
+    end
+
+    reg  [7:0] rd;
     always @* begin
         case (uio_in[4:2])
             3'd0:    rd = status;
@@ -109,7 +172,7 @@ module tt_um_trinity_nano (
             3'd2:    rd = busy ? 8'h00 : acc[15:8];
             3'd3:    rd = 8'hC0;
             3'd4:    rd = 8'h47;
-            3'd5:    rd = mem[{ui_in[3:0], 3'b000} +: 8];
+            3'd5:    rd = rb;
             default: rd = 8'h00;
         endcase
     end
