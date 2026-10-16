@@ -25,8 +25,9 @@
 //     sits below the rounding position and the decision on guard and "rest is nonzero" is
 //     exactly that of the true difference;
 //   * ONE 14-bit adder does both operations: for an effective subtraction the aligned
-//     operand is inverted and a carry-in of 1 is added (two's complement); both come from a
-//     single 15-bit addition whose low bit supplies the carry-in;
+//     operand is inverted and a carry-in of 1 is added (two's complement); the carry-in is the
+//     seed of one ripple chain (gf16_fa1 of gf16_sig_mul10.v on the 10 bits with three variable
+//     inputs), so this file needs gf16_sig_mul10.v in every compile list;
 //   * after the add the sum is normalised by a fixed 8/4/2/1 left-normalisation tree (module
 //     gf16_add_norm14 below, same count and word as a leading-zero encoder plus shift) and rounded.
 //   * zero operands go through the same arithmetic (no separate output path): a finite zero enters
@@ -44,8 +45,10 @@
 //   lowest bits of the original significand, the same set as the single-shift form;
 //   add/sub: for X in [0, 2^13), Y in [0, 2^13): X - Y (X >= Y) = X + (~Y) + 1 modulo 2^14 with
 //   ~Y taken over 14 bits, and the 14-bit result equals the true difference because X >= Y;
-//   X + Y < 2^14 needs no wrap. {X,1} + {Y',c} with c = eff_sub and Y' = Y xor eff_sub
-//   gives (X + Y' + c) in bits [14:1] because bit 0 contributes 1 + c, whose carry is c.
+//   X + Y < 2^14 needs no wrap. With c = eff_sub and Y' = Y xor eff_sub the sum is (X + Y' + c) mod 2^14.
+//   The former form {X,1} + {Y',c} (15 bits, result in bits [14:1]) is the same function: bit 0 contributes
+//   1 + c, whose carry is c. It is now written as a 14-bit ripple chain with carry seed c (gf16_fa1 where
+//   all three inputs vary, half adders / xor where a bit of X is the constant 0).
 `default_nettype none
 
 // Left-normaliser of the 14-bit sum: lz is the number of leading zeros (14 for x = 0) and norm is x shifted
@@ -130,10 +133,29 @@ module gf16_v2_add (
     wire [12:0] smj_near = {v4[12:1], v4[0] | k4};
     wire [12:0] smj      = far ? {12'd0, ~zero_lo} : smj_near;
 
-    // ONE adder for add and subtract: bext + (smj xor eff_sub) + eff_sub, 14 bits
+    // ONE adder for add and subtract: tsum = ({1'b0, bext} + (smj xor eff_sub) + eff_sub) mod 2^14, written as a
+    // ripple chain with the carry seed eff_sub. {1'b0, bext} has the constant bits [2:0] = 0 and [13] = 0, so
+    // bits 0..2 are half adders and bit 13 is an xor (its carry out is dropped, mod 2^14); bits 3..12 have three
+    // variable inputs and use the full-adder wrapper gf16_fa1 of gf16_sig_mul10.v. Policy and the equivalence
+    // with the former 15-bit form: specs/physical/gf16_dot4_addnorm_probe.t27 section 6.
     wire [13:0] smj_x  = {1'b0, smj} ^ {14{eff_sub}};
-    wire [14:0] sum15  = {1'b0, bext, 1'b1} + {smj_x, eff_sub};
-    wire [13:0] tsum   = sum15[14:1];
+    wire        c_seed = eff_sub;                // carry into bit 0 (the +1 of the two's complement)
+    wire [13:0] tsum;
+    wire [13:1] cy;                              // cy[i]: carry into bit i
+    assign tsum[0] = smj_x[0] ^ c_seed;
+    assign cy[1]   = smj_x[0] & c_seed;
+    assign tsum[1] = smj_x[1] ^ cy[1];
+    assign cy[2]   = smj_x[1] & cy[1];
+    assign tsum[2] = smj_x[2] ^ cy[2];
+    assign cy[3]   = smj_x[2] & cy[2];
+    genvar j;
+    generate
+        for (j = 3; j <= 12; j = j + 1) begin : g_sum_fa
+            gf16_fa1 u_fa (.a(bext[j]), .b(smj_x[j]), .cin(cy[j]), .sum(tsum[j]), .cout(cy[j+1]));
+        end
+    endgenerate
+    assign tsum[13] = smj_x[13] ^ cy[13];
+    wire _unused_bext = &{1'b0, bext[2:0]};     // the three constant guard zeros of bext take no adder cell
 
     // normalisation: leading-zero count and the left-aligned word from one fixed 8/4/2/1 tree
     wire [3:0]  lz;

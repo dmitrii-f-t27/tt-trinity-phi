@@ -121,7 +121,8 @@ def expected(op, pairs):
 
 def build(op, outdir):
     exe = os.path.join(outdir, "unit_" + op)
-    srcs = [os.path.join(SRC, "gf16_v2_add.v")] if op == "add" else \
+    # the adder's significand sum uses the full-adder wrapper gf16_fa1 defined in gf16_sig_mul10.v
+    srcs = [os.path.join(SRC, "gf16_v2_add.v"), os.path.join(SRC, "gf16_sig_mul10.v")] if op == "add" else \
         [os.path.join(SRC, "gf16_v2_mul.v"), os.path.join(SRC, "gf16_sig_mul10.v")]
     cmd = ["iverilog", "-g2012", "-o", exe] + (["-DUNIT_ADD"] if op == "add" else []) + \
         [os.path.join(HERE, "unit_tb.v")] + srcs
@@ -176,7 +177,8 @@ def run_add_norm(tmp):
     """The real RTL module gf16_add_norm14 against the old leading-zero definition on all 2^14 inputs."""
     exe = os.path.join(tmp, "tb_add_norm14")
     c = subprocess.run(["iverilog", "-g2012", "-o", exe, os.path.join(HERE, "tb_add_norm14.v"),
-                        os.path.join(SRC, "gf16_v2_add.v")], capture_output=True, text=True)
+                        os.path.join(SRC, "gf16_v2_add.v"), os.path.join(SRC, "gf16_sig_mul10.v")],
+                       capture_output=True, text=True)
     if c.returncode != 0:
         print("iverilog failed for tb_add_norm14:\n" + c.stderr)
         return False

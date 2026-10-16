@@ -94,7 +94,9 @@ jobs:
       # official synthesis maps the 3-term carry-save positions to sky130_fd_sc_hd__fa_1 (selected by
       # the flow's __pnr__ define); this step simulates that branch with the real PDK Verilog models of the
       # pinned PDK on this runner: the 8 truth cases of the cell and wrapper, all 2^20 products against
-      # the integer product, and a negative control that must be caught. No fallback model; a missing or
+      # the integer product, and a negative control that must be caught; and the active adder (its significand
+      # sum uses the same wrapper) on the zero set (262144) and the carry set against the oracle, with its own
+      # wrong-carry-seed control that must be caught. No fallback model; a missing or
       # ambiguous PDK, an unknown or non-zero result fails the step. It runs even when the placement
       # failed; a red Build GDS stays red whatever this step does.
       - name: Physical full-adder model check

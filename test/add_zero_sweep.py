@@ -33,6 +33,9 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SRC_ADD = os.path.join(ROOT, "src", "gf16_v2_add.v")
+# the adder uses the full-adder wrapper gf16_fa1 of this file; it is always the real, unmodified source
+# (also for the temporary mutant, of which only the adder file is a copy)
+SRC_FA = os.path.join(ROOT, "src", "gf16_sig_mul10.v")
 sys.path.insert(0, HERE)
 import gf16_oracle as orc  # noqa: E402
 
@@ -56,14 +59,14 @@ def write_hex(path, words):
         f.write("\n".join("%04x" % w for w in words) + "\n")
 
 
-def build_and_run(add_src, tmp, tag, files):
+def build_and_run(add_src, tmp, tag, files, n=EXPECT_N):
     exe = os.path.join(tmp, "unit_add_" + tag)
-    c = subprocess.run(["iverilog", "-g2012", "-DUNIT_ADD", "-o", exe, os.path.join(HERE, "unit_tb.v"), add_src],
-                       capture_output=True, text=True)
+    c = subprocess.run(["iverilog", "-g2012", "-DUNIT_ADD", "-o", exe, os.path.join(HERE, "unit_tb.v"), add_src,
+                        SRC_FA], capture_output=True, text=True)
     if c.returncode != 0:
         return {"compiled": False, "stdout": "", "stderr": c.stderr[-2000:], "n": None, "mismatch": None, "exit": None}
     fa, fb, fe = files
-    r = subprocess.run(["vvp", exe, "+A=" + fa, "+B=" + fb, "+E=" + fe, "+N=%d" % EXPECT_N],
+    r = subprocess.run(["vvp", exe, "+A=" + fa, "+B=" + fb, "+E=" + fe, "+N=%d" % n],
                        capture_output=True, text=True)
     m = RESULT_RE.search(r.stdout)
     return {"compiled": True, "stdout": r.stdout[-4000:], "stderr": r.stderr[-1000:], "exit": r.returncode,

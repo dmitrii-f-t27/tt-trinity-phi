@@ -293,6 +293,26 @@ hidden 1 back) that must show real mismatches including 0x0000 + 0x0001 (a missi
 missing result line is an error, not a kill). Limits: neither area nor timing is measured here; the effect is decided
 only by the official full mapping and the physical flow of the same commit.
 
+## 9j. ADD significand sum on the full-adder wrapper (one structural candidate)
+Policy and the equivalence argument: `specs/physical/gf16_dot4_addnorm_probe.t27` section 6. The former 15-bit form
+`{1'b0, bext, 1'b1} + {smj_x, eff_sub}`, bits [14:1], is the 14-bit sum `({1'b0, bext} + smj_x + eff_sub) mod 2^14`;
+`src/gf16_v2_add.v` now writes that sum as one ripple chain with carry seed `eff_sub`: half adders on bits 0..2 and an
+xor on bit 13 (the corresponding bits of `{1'b0, bext}` are the constant 0), `gf16_fa1` (the unchanged wrapper of
+`src/gf16_sig_mul10.v`, generic logic in simulation, `fa_1` under `__pnr__`) on bits 3..12. Everything around the sum
+is unchanged. Every standalone compile or synthesis of the adder now also lists `gf16_sig_mul10.v`
+(`test/unit_sweeps.py`, `test/add_zero_sweep.py` incl. its temporary mutant, `test/official_block_profile.py` `add` and
+`add_norm14`, `test/area_profile.py`, `test/width_gate.py`); the four active files, `info.yaml` and the Makefile are
+unchanged. Checks: `python3 test/add_carry_check.py --out add-carry-check` (CI job `unit-full`, after the zero sweep,
+before the full sweeps): the deterministic set of `test/add_vectors.py` (cancellation, borrow, different signs, carry,
+ties, far jam, edge exponents, NaN/Inf, zeros, the ADD steps of the DOT4 conformance vectors) against the oracle with 0
+mismatches, and a temporary copy with carry seed 0 that must show a real mismatch on two finite nonzero operands of
+different sign (missing text, compile error or missing result is an error, not a kill). `test/physical_fa_check.py`
+(after Build GDS) additionally runs the active adder with `-DPHI_FA_PHYS` on the real pinned PDK models
+(`-Punit_tb.SETTLE`, the generic default of `unit_tb.v` stays 1) on the zero set and the carry set, and the same
+wrong-seed copy there. The old checks (full sweeps, 14 pin tests, 18 mutation controls, 2^20 products) are unchanged.
+Limits: no area or timing is measured by these checks; a ripple chain can be slower than the former mapping; only the
+official full mapping and physical flow of the same commit decide.
+
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
 non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty

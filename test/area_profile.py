@@ -233,7 +233,8 @@ def main():
         profile("mul_gf16_current", "gf16_v2_mul", [c("gf16_v2_mul.v"), c("gf16_sig_mul10.v")], lib, out, results)
         profile("mul_gf16_949", "gf16_v2_mul", [o("gf16_v2_mul.v"), o("gf16_sig_mul10.v")], lib, out, results)
         profile("add_949", "gf16_v2_add", [o("gf16_v2_add.v")], lib, out, results)
-        profile("add_current", "gf16_v2_add", [c("gf16_v2_add.v")], lib, out, results)
+        # the current adder instantiates gf16_fa1 (defined in gf16_sig_mul10.v); the 949 adder does not
+        profile("add_current", "gf16_v2_add", [c("gf16_v2_add.v"), c("gf16_sig_mul10.v")], lib, out, results)
         profile("top_full_949", "tt_um_trinity_nano", old, lib, out, results)
         profile("top_full_current", "tt_um_trinity_nano", cur, lib, out, results)
         why = "MUL and ADD replaced by blackboxes: storage, multiplexers and control only; blackbox area EXCLUDED"

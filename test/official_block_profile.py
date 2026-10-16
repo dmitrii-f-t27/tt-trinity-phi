@@ -8,9 +8,9 @@ timing is invented for the clock-less probes):
   full     the unchanged src/config_merged.json: the calibration. It must reproduce the strategy, cell count,
            area and per-type cell counts of the CURRENT official run (runs/wokwi, read only, never hard-coded).
   mul      DESIGN_NAME gf16_v2_mul (gf16_v2_mul.v + gf16_sig_mul10.v).
-  add      DESIGN_NAME gf16_v2_add (gf16_v2_add.v).
+  add      DESIGN_NAME gf16_v2_add (gf16_v2_add.v + gf16_sig_mul10.v for the full-adder wrapper gf16_fa1).
   add_norm14  DESIGN_NAME gf16_add_norm14, the normaliser module that already exists inside the active
-           gf16_v2_add.v (same file, nothing extracted). Policy: specs/physical/gf16_dot4_addnorm_probe.t27. It is
+           gf16_v2_add.v (same file, nothing extracted; gf16_sig_mul10.v only resolves gf16_fa1). Policy: specs/physical/gf16_dot4_addnorm_probe.t27. It is
            synthesised alone, so it is NOT a share of `add`: never subtract it from add or sum it towards full.
   storage  the real tt_um_trinity_nano with gf16_v2_mul and gf16_v2_add replaced by temporary black boxes that
            have their real port lists (parsed from the real sources); the arithmetic files are left out. The
@@ -83,9 +83,11 @@ REQUIRED_CFG = ("PDK", "PDK_ROOT", "STD_CELL_LIBRARY", "SYNTH_EXCLUDED_CELL_FILE
 AREA_TOL = 0.01
 FILES = {
     "mul": ("gf16_v2_mul", ["gf16_v2_mul.v", "gf16_sig_mul10.v"]),
-    "add": ("gf16_v2_add", ["gf16_v2_add.v"]),
-    # the existing normaliser module of the active adder file, synthesised alone (no new RTL module)
-    "add_norm14": ("gf16_add_norm14", ["gf16_v2_add.v"]),
+    # the adder's significand sum instantiates gf16_fa1, which is defined in gf16_sig_mul10.v
+    "add": ("gf16_v2_add", ["gf16_v2_add.v", "gf16_sig_mul10.v"]),
+    # the existing normaliser module of the active adder file, synthesised alone (no new RTL module); the
+    # helper file only resolves gf16_fa1 of the unused adder module for the linter, synthesis keeps only the top
+    "add_norm14": ("gf16_add_norm14", ["gf16_v2_add.v", "gf16_sig_mul10.v"]),
 }
 
 

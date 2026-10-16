@@ -51,6 +51,12 @@ jobs:
       - name: Targeted zero-operand ADD sweep with negative control
         run: python3 test/add_zero_sweep.py --out add-zero-sweep
 
+      # ADD significand ripple chain (policy: section 6 of the same sidecar): deterministic carry set (cancellation,
+      # borrow, carry, ties, far jam, edges, specials, conformance ADD steps) against the oracle, plus a
+      # temporary wrong-carry-seed copy that must be KILLED. In addition to, not instead of, every other check.
+      - name: ADD carry-chain check with negative control
+        run: python3 test/add_carry_check.py --out add-carry-check
+
       - name: Full unit sweeps (also all 2^20 shift-and-add products vs integer product)
         run: python3 test/unit_sweeps.py --profile full --jobs 4
 
@@ -59,7 +65,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: add-zero-sweep
-          path: add-zero-sweep/
+          path: |
+            add-zero-sweep/
+            add-carry-check/
           if-no-files-found: error
 
   pin-rtl:

@@ -204,7 +204,8 @@ class OfficialBlockProfileTest(unittest.TestCase):
         snapshot = json.dumps(base, sort_keys=True)
         cfg = obp.probe_config(base, "add_norm14")
         self.assertEqual(cfg["DESIGN_NAME"], "gf16_add_norm14")
-        self.assertEqual(cfg["VERILOG_FILES"], ["dir::gf16_v2_add.v"])
+        # the normaliser module comes from the unchanged adder file; gf16_sig_mul10.v only defines gf16_fa1
+        self.assertEqual(cfg["VERILOG_FILES"], ["dir::gf16_v2_add.v", "dir::gf16_sig_mul10.v"])
         for key in ("SYNTH_STRATEGY", "CLOCK_PERIOD", "PL_TARGET_DENSITY_PCT", "EXTRA_EXCLUDED_CELLS", "SYNTH_DEFINES"):
             self.assertEqual(cfg[key], base[key], key)
         self.assertEqual(set(cfg), set(base))

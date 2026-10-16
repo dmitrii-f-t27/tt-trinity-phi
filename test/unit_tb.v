@@ -4,9 +4,13 @@
 // compares. Build with -DUNIT_ADD for gf16_v2_add, without it for gf16_v2_mul.
 //   vvp unit +A=a.hex +B=b.hex +E=exp.hex +N=<count>
 // Result line: UNIT_RESULT <add|mul> N=<count> MISMATCH=<count>   (!== so X never passes)
+// SETTLE: wait in ns after the inputs change before the output is compared. The default 1 is the generic
+// (zero-delay) run, unchanged. Only test/physical_fa_check.py overrides it (-Punit_tb.SETTLE=...) for the
+// technology branch with the unit-delay PDK models; an unsettled output differs and counts as a mismatch.
 `timescale 1ns/1ps
 module unit_tb;
     parameter MAXN = 262144;
+    parameter SETTLE = 1;
 
     reg [15:0] av [0:MAXN-1];
     reg [15:0] bv [0:MAXN-1];
@@ -41,7 +45,7 @@ module unit_tb;
         for (i = 0; i < n; i = i + 1) begin
             a = av[i];
             b = bv[i];
-            #1;
+            #(SETTLE);
             if (r !== ev[i]) begin
                 bad = bad + 1;
                 if (bad <= 10)
