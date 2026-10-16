@@ -226,3 +226,43 @@ invariant eval_eight_clocks
 // The clock-root fanout stays OPEN until a real CTS result meets the limit of 10
 // in all 9 corners; it is neither ignored nor waived.
 // The SIGNOFF_* constants of section 5 hold the numbers of this policy.
+//
+// ----------------------------------------------------------------------------
+// 9a. Next controlled experiment: design repair on global-route parasitics
+// ----------------------------------------------------------------------------
+// Recipe policy written BEFORE any config change; a hypothesis, not a promise.
+// Observed: 054134d (three delay families excluded) closed setup/hold and fanout
+// in all 9 corners but left 289 max-slew and 1 max-cap violations. 80eb0d1 raised
+// the post-placement repair margins to slew 70 % / cap 50 %: its Build GDS FAILED
+// inside OpenROAD.RepairDesignPostGPL (last logged repair iteration 250, process
+// peak about 14 GiB, 7 min 13 s); no final STAPostPNR reports, final metrics or
+// final netlist exist.
+// Exit cause unconfirmed (memory exhaustion is only an inference). The 054 counts
+// are NOT results of 80eb.
+// Experiment (only these changes against 80eb0d1):
+//   - post-placement repair margins back to the official defaults 20 % / 20 %
+//     (DESIGN_REPAIR_MAX_SLEW_PCT, DESIGN_REPAIR_MAX_CAP_PCT): a repair target,
+//     not a sign-off limit;
+//   - the official post-global-route repair step on: RUN_POST_GRT_DESIGN_REPAIR
+//     true, GRT_DESIGN_REPAIR_MAX_SLEW_PCT 10, GRT_DESIGN_REPAIR_MAX_CAP_PCT 10,
+//     GRT_DESIGN_REPAIR_RUN_GRT true (the official defaults of those variables).
+// Intent: choose drivers on global-route parasitics instead of an aggressive
+// margin on placement estimates.
+// Unchanged: all 9 STA corners (resizer corners fall back to STA_CORNERS), the
+// three delay-family exclusions, strict checker corners, CTS 20 / 50 um, 40 ns /
+// 25 MHz target, 1x2 tiles, exactly 8 enabled clocks, every sign-off limit
+// (0.75 ns, fanout 10, library max cap) and every section 9 rule.
+// Source (LibreLane 3.0.14, cached primary): the Classic flow lists
+// OpenROAD.RepairDesignPostGRT after GlobalRouting and gates it by
+// RUN_POST_GRT_DESIGN_REPAIR, default false; that variable is documented as
+// "experimental and may result in hangs and/or extended run times" (its text
+// names the post-placement step, but the gate maps it to the post-global-route
+// step). The step re-runs global routing, estimates global-route parasitics and
+// calls repair_design with the GRT_DESIGN_REPAIR_* margins; GRT_DESIGN_REPAIR_RUN_GRT
+// controls the global routing after the repair.
+// Risks: hang or long runtime (the implementation bounds Build GDS to 20 minutes;
+// a timeout or failure is a FAIL, never a PASS), area, hold and setup changes.
+// The candidate is clean only if section 9 holds in all 9 corners (every count
+// 0), Magic DRC / LVS / antenna 0 and utilization <= 1, with the auditor, precheck
+// and gate-level test all required. A clean 1x2 result still does not meet
+// issue #100, whose target is one 1x1 tile.
