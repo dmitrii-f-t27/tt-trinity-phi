@@ -2,11 +2,14 @@
 ; gf16_dot4_sky26d.t27 - GF16 DOT4 pin and arithmetic contract, 1x1 tile, sky130A, TT SKY26d
 ; Issue: https://github.com/gHashTag/tt-trinity-phi/issues/100
 ; Status: contract accepted for implementation (issue #100). It is a spec, written before RTL.
-; Checked statically only: t27c parse and typecheck pass; its assertions, an oracle, RTL
-; and the 1x1 fit are not verified yet. Not ready for submission.
+; Checked statically at commit 325c9bc: t27c parse and typecheck pass. That check does not
+; execute the assertions. Execution of the assertions, the oracle and RTL results, and the
+; physical verdict (fit in 1x1, timing) are decided by the CI of the current commit, not by
+; this header. Not ready for submission.
 ; Authors: Dmitrii Fedorov (@dmitrii-f-t27); original project author Dmitrii Vasilev.
 ; License: Apache-2.0 (see SPDX line above).
-; No RTL, test or CI change accompanies this file.
+; Order of work: this spec was committed BEFORE any RTL, in commit 325c9bc. RTL, tests and CI
+; come in later commits (so "no RTL accompanies this file" was true only of 325c9bc).
 ; Format: GF16 = [S(1) E(6) M(9)], bias 31, see conformance/FORMAT-SPEC-001.json.
 ; This is an explicit SKY26d contract. It deliberately differs from the historical RTL
 ; and from the legacy gf16.t27 (see section 8). The global t27 gf16.t27 is not changed.

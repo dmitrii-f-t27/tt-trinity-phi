@@ -1,10 +1,8 @@
 name: t27 Format Validation
 
 on:
-  push:
-    branches: [main, master]
+  push:                 # every branch, so a feature-branch or fork push runs these checks too
   pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -62,13 +60,17 @@ jobs:
             exit 1
           fi
 
-      - name: iverilog lint (Verilog-2005)
+      - name: iverilog compile check (Verilog-2005), compiler failure fails the job
         run: |
-          echo "=== iverilog -g2005 compile check ==="
-          iverilog -g2005 -y src \
+          set -euo pipefail
+          echo "=== iverilog -g2005 compile check of the active design ==="
+          # No pipe, no `|| true`: a compile error, an unknown module or a syntax error is a
+          # non-zero exit and fails this step. -y src resolves the instantiated sub-modules.
+          iverilog -g2005 -Wall -y src \
             src/tt_um_trinity_nano.v \
-            -o /dev/null 2>&1 | grep -v "^$" || true
-          echo "PASS: iverilog lint done"
+            -o "$RUNNER_TEMP/phi-top.vvp"
+          test -s "$RUNNER_TEMP/phi-top.vvp"
+          echo "compiled: iverilog exited 0 and produced the vvp file"
 
       - name: Verify top module name
         run: |

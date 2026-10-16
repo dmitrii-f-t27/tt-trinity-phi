@@ -1,96 +1,104 @@
 name: RTL & Cocotb Tests
 
+# SKY26d GF16 DOT4 (issue #100). Every job below fails closed: there is no `|| true`, no
+# `continue-on-error`, and a green `make` alone is not accepted (test/check_results.py).
+# The gate-level run of the SAME pin tests is done by the official gl_test job in gds.yaml.
+
 on:
-  push:
-    branches: [main]
+  push:                 # every branch: a feature-branch or fork push runs ALL jobs below
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  iverilog-canonical:
-    name: IVerilog canonical anchor test
+  spec-static:
+    name: Spec assertions, oracle self-check, source-list gate
     runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Execute every test and invariant block of the .t27 spec (fail-closed adapter)
+        run: python3 test/t27_exec.py
+
+      - name: Oracle self-check, conformance vectors, spec vs oracle vs pin model
+        run: python3 test/oracle_selfcheck.py
+
+      - name: Source list == Makefile == instantiated files, pins, official action pin, no '*'
+        run: python3 test/check_project.py
+
+  unit-full:
+    name: Isolated MUL/ADD vs exact oracle (full sweeps, 0 mismatches)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install IVerilog
-        run: sudo apt-get update && sudo apt-get install -y iverilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog python3
 
-      - name: Create and run canonical test
-        run: |
-          cat > test_canonical.v << 'TESTEOF'
-          `timescale 1ns/1ps
-          module tb_canonical;
-              reg clk = 0;
-              reg rst_n = 0;
-              reg ena = 1;
-              reg [7:0] ui_in = 0;
-              reg [7:0] uio_in = 0;
-              wire [7:0] uo_out;
-              wire [7:0] uio_out;
-              wire [7:0] uio_oe;
+      - name: Full unit sweeps (also all 2^20 shift-and-add products vs integer product)
+        run: python3 test/unit_sweeps.py --profile full --jobs 4
 
-              tt_um_trinity_nano dut (.*);
-
-              always #10 clk = ~clk;
-
-              wire [15:0] result = {uio_out, uo_out};
-
-              initial begin
-                  $dumpfile("tb_canonical.vcd");
-                  $dumpvars(0, tb_canonical);
-
-                  rst_n = 0;
-                  #100;
-                  rst_n = 1;
-                  #20;
-
-                  if (result != 16'h47C0) $error("[T1] FAIL expected 0x47C0 got 0x%04h", result);
-                  if (uio_oe != 8'hFF) $error("[T2] FAIL uio_oe = 0x%02h", uio_oe);
-
-                  $finish;
-              end
-          endmodule
-          TESTEOF
-          iverilog -o test_canonical.out -Isrc src/*.v test_canonical.v
-          vvp test_canonical.out
-
-  cocotb-rtl:
-    name: Cocotb RTL tests
+  pin-rtl:
+    name: Pin-level cocotb tests (RTL)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Cocotb + IVerilog
+      - name: Install cocotb (pinned) and IVerilog
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pip python3-venv iverilog
-          pip3 install --break-system-packages cocotb
+          sudo apt-get install -y python3 python3-venv iverilog
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -r test/requirements.txt
 
-      - name: Run Cocotb tests
+      - name: Run the pin tests
         run: |
+          . "$RUNNER_TEMP/venv/bin/activate"
           cd test
-          make SIM=icarus
+          PHI_RANDOM_N=2000 make
 
-  yosys-rsi1-audit:
-    name: R-SI-1 audit (Yosys)
+      - name: Require every declared test to have run and passed
+        run: python3 test/check_results.py test/results.xml test/test.py
+
+  mutations:
+    name: Negative controls (mutated RTL must fail the pin tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install cocotb (pinned) and IVerilog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-venv iverilog
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -r test/requirements.txt
+
+      - name: Run the mutation harness
+        run: |
+          . "$RUNNER_TEMP/venv/bin/activate"
+          python3 test/mutation_runner.py
+
+  synth-audit:
+    name: Yosys audit of the active sources (no $mul)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install Yosys
-        run: sudo apt-get update && sudo apt-get install -y yosys
+        run: sudo apt-get update && sudo apt-get install -y yosys python3
 
-      - name: Run Yosys R-SI-1 audit
-        run: |
-          yosys -p "read_verilog -I src src/*.v; \
-                    hierarchy -top tt_um_trinity_nano; \
-                    proc; opt; stat" | grep '\$mul' || echo "No multipliers found (R-SI-1 compliant)"
+      - name: Fail-closed Yosys audit
+        run: python3 test/synth_audit.py
 
+  # ---- compatibility jobs kept from the archived baseline (they test archived files) ----
   gf16-fix-verify:
-    name: GF16 v2 arithmetic fix verification
+    name: GF16 v2 arithmetic fix verification (archived comparison, faithful check)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -99,7 +107,7 @@ jobs:
       - name: Install IVerilog
         run: sudo apt-get update && sudo apt-get install -y iverilog python3
 
-      - name: Verify staged gf16_v2 fix (corrects the gf16_mul MAC defect)
+      - name: Compare old units and the SKY26d v2 units on the staged pair set
         run: python3 test/gf16_v2_verify.py
 
   width-defect-gate:
@@ -129,7 +137,7 @@ jobs:
         run: python3 test/gf_add_sweep.py
 
   instantiated-audit:
-    name: Instantiated-subsystem conformance audit (Phi blocks)
+    name: Archived Phi blocks conformance audit (not part of the active design)
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -138,5 +146,5 @@ jobs:
       - name: Install IVerilog
         run: sudo apt-get update && sudo apt-get install -y iverilog python3
 
-      - name: Phi blocks (phi_anchor_post, sacred_constants_rom, phi_mesh_bridge, phi_d2d_lite)
+      - name: Archived blocks (phi_anchor_post, sacred_constants_rom, phi_mesh_bridge, phi_d2d_lite)
         run: python3 test/phi_audit.py
