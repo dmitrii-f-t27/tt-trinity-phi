@@ -67,6 +67,42 @@ module physical-gf16_dot4_addnorm_probe;
 //   generated Zig does not compile with "assertion failed". Any other outcome (missing tool, import or linker
 //   error, all green) fails the gate.
 // The adapter refuses the numeric spec and any other spec; it has no option to lower these expectations.
+//
+// ============================================================================
+// 5. Structural area candidate: zero operands at the ADD input (policy, written before the RTL change)
+// ============================================================================
+//
+// Acceptance is UNCHANGED: specs/numeric/gf16_dot4_sky26d.t27 (8 enabled clocks E1..E8, ADD exact RNE, every
+// special rule) and the unchanged oracle test/gf16_oracle.py decide; this section adds no numeric rule.
+// Measured so far (official BLOCK_PROFILE, isolated, non-additive): gf16_add_norm14 alone 62 cells,
+// 571.7984 um2. That number is NOT a saving and is not subtracted from anything. The saving of the candidate
+// below is NOT measured; it is decided only by the official full mapping and the physical flow.
+//
+// Change (only src/gf16_v2_add.v; gf16_add_norm14, the top, the MUL and every other file stay as they are):
+//   * the finite-zero flags are sorted with the operands by the same a_big compare: zero_hi, zero_lo;
+//   * the significand that enters the arithmetic is {not zero, M}: a finite zero gives significand 0, every
+//     finite nonzero code (also E = 0 with M > 0) keeps the hidden 1;
+//   * the far alignment (d >= 13) gives the jam bit "not zero_lo": 1 for a nonzero low operand as before,
+//     0 for a zero low operand;
+//   * the three output branches "zero and zero", "zero_a -> b", "zero_b -> a" are removed; NaN, Inf and
+//     Inf - Inf keep their priority in front of the arithmetic; no second full path stays behind a mux.
+// Equivalence boundaries (each class, a and b in either order, either zero sign):
+//   * NaN / Inf involved: the unchanged priority branches decide before any zero handling, as before;
+//   * two finite zeros: both significands 0, d = 0, the aligned low part is 0; with eff_sub the adder forms
+//     0 + (2^14 - 1) + 1 = 2^14, which is 0 in 14 bits; tsum = 0 gives +0 (old: zero and zero -> +0);
+//   * one finite zero x' and a finite nonzero x: x has the larger {E,M} field, so x is the high operand and
+//     the zero is the low one whatever the argument order; the aligned low part is 0 for every d (near: all
+//     shifted bits are 0, sticky 0; far: jam bit 0); the adder gives tsum = {0, 1, M, 000} for add AND for
+//     subtract (the two's complement of 0 wraps to 0), so the normaliser shifts by exactly 1, the guard and
+//     sticky bits are 0 (no rounding, no carry), eres = E + 1 - 1 = E, mant = M; E <= 62 never overflows and
+//     E = 0 with M > 0 is not flushed, so the result is {sign of x, E, M} = x bit for bit (old: passthrough
+//     of x). The sign of the zero does not reach the result;
+//   * two finite nonzero operands: both hidden bits 1, far jam 1: the arithmetic is the old one bit for bit.
+// Checks (written with the RTL change, run only by CI): a targeted sweep with the unchanged unit bench and
+// oracle, a = +0 and -0 against all 65536 codes, both argument orders (262144 vectors, including
+// 0x0000 + 0x0001), 0 mismatches; a negative control in a temporary copy (the low significand of a zero gets
+// the hidden 1 back) that must produce a real mismatch, in particular on 0x0000 + 0x0001; then the unchanged
+// full unit sweeps, pin tests and mutation controls.
 
 pub const PROBE_COUNT : u16 = 5;
 pub const NORM_X_WIDTH : u16 = 14;
