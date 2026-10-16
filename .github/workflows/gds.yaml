@@ -20,7 +20,10 @@ jobs:
         with:
           submodules: recursive
 
+      # Bounded: the post-global-route repair (sidecar section 9a) is documented upstream as experimental
+      # and may hang; a timeout fails this step (never a pass). The sign-off inputs below still upload.
       - name: Build GDS
+        timeout-minutes: 20
         uses: TinyTapeout/tt-gds-action@395eedb3eeec3c2f4961c3b04ff2cf87f5525636 # ttsky26d
         with:
           pdk: sky130A

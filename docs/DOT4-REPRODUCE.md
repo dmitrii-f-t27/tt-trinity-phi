@@ -300,10 +300,16 @@ through `EXTRA_EXCLUDED_CELLS` = `sky130_fd_sc_hd__clkdlybuf*`, `sky130_fd_sc_hd
 (LibreLane applies these wildcards to synthesis and to the PnR dont-use list), everything else as `9eb7373`: no cell
 of those families in the final netlist, setup/hold violations 0 in all 9 corners (worst setup +3.35 ns in `max_ss`,
 worst hold +0.106 ns in `min_ff`), fanout 0, DRC/LVS/antenna 0, utilization 0.587; strict flow still FAILED with 289
-max-slew violations (worst `ss`) and 1 max-cap violation (`max_ss`). Current candidate: the `054134d` recipe plus the
-repair margins `DESIGN_REPAIR_MAX_SLEW_PCT` 70 and `DESIGN_REPAIR_MAX_CAP_PCT` 50 (official defaults 20 / 20; passed
-as `repair_design -slew_margin` / `-cap_margin`): stricter repair targets, the limits are not raised. Unvalidated,
-with area, hold and setup risk.
+max-slew violations (worst `ss`) and 1 max-cap violation (`max_ss`). `80eb0d1` added the post-placement repair margins
+`DESIGN_REPAIR_MAX_SLEW_PCT` 70 / `DESIGN_REPAIR_MAX_CAP_PCT` 50: Build GDS FAILED inside
+`OpenROAD.RepairDesignPostGPL`, no final STAPostPNR reports, final metrics or netlist exist, and the auditor
+reported FAIL with null counts (the cause of the tool exit is unconfirmed). Current candidate (sidecar section 9a):
+those margins back to the official 20 / 20 %, and the official post-global-route repair step enabled with its
+default settings (`RUN_POST_GRT_DESIGN_REPAIR` true, `GRT_DESIGN_REPAIR_MAX_SLEW_PCT` 10,
+`GRT_DESIGN_REPAIR_MAX_CAP_PCT` 10, `GRT_DESIGN_REPAIR_RUN_GRT` true), which runs `repair_design` on global-route
+parasitics. LibreLane 3.0.14 documents that step as experimental and as possibly hanging or running long, so the
+Build GDS step in `gds.yaml` has `timeout-minutes: 20`; a timeout fails it. Everything else (three excluded
+families, strict 9 corners, CTS 20 / 50 um, 40 ns, 1x2, 8 clocks, limits) is unchanged. A hypothesis, unvalidated.
 
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a

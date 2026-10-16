@@ -21,10 +21,12 @@ multiplier and one shared adder, 8 clocks per dot product; `uio` is input only. 
 > and 105 max-slew plus 15 setup violations (worst -2.34 ns) remained. `054134d` excluded the three HD
 > delay-cell families `sky130_fd_sc_hd__clkdlybuf*`, `dlygate*` and `dlymetal*` (none left in the netlist): setup
 > and hold violations 0 in all 9 corners (worst setup slack +3.35 ns), fanout 0, DRC/LVS/antenna 0, but 289
-> max-slew violations (worst `ss`) and 1 max-cap violation remain, so the strict flow failed. Current candidate:
-> the same recipe plus stricter repair targets `DESIGN_REPAIR_MAX_SLEW_PCT` 70 and `DESIGN_REPAIR_MAX_CAP_PCT` 50
-> (official defaults 20 / 20); the 0.75 ns, fanout 10 and library cap limits are unchanged. Unvalidated: area,
-> hold, setup and slew are decided only by the `physical-signoff` job of a run.
+> max-slew violations (worst `ss`) and 1 max-cap violation remain, so the strict flow failed. `80eb0d1` raised the
+> post-placement repair margins to 70 / 50 %: Build GDS failed inside the post-placement repair step, with no final
+> reports (cause unconfirmed). Current candidate (sidecar section 9a): margins back to the official 20 / 20 % and the
+> official post-global-route repair on (`RUN_POST_GRT_DESIGN_REPAIR`, margins 10 / 10 %, re-route on), everything
+> else as `054134d`/`80eb0d1`, 8 clocks unchanged. Upstream marks that step experimental (may hang), so Build GDS
+> is limited to 20 minutes; a timeout is a FAIL. A hypothesis, unvalidated until the `physical-signoff` job reports.
 
 ## Status (read this first)
 

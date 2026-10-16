@@ -14,7 +14,8 @@ Physical profile, chosen by the environment variable PHI_PROFILE (exact values o
   "eval-1x2"         isolated evaluation: 1x2, clock_hz 25000000, CLOCK_PERIOD 40, density 65,
                      AREA 1, MFS3 False, AREA_USE_NF False, the three excluded HD delay-cell
                      families, strict timing/slew/cap checker corners ["*"], CTS 20 / 50 um, repair
-                     margins slew 70 % / cap 50 %; the constants of
+                     margins 20 / 20 % and post-global-route repair 10 / 10 % with re-route
+                     (sidecar section 9a); the constants of
                      specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27 must agree with info.yaml and
                      src/config.json, its latency must equal LATENCY_CLOCKS = 8 of the numeric spec, and
                      the numeric spec must be byte-identical to NUMERIC_SPEC_SHA256.
@@ -59,9 +60,12 @@ PROFILES = {
                    "TIMING_VIOLATION_CORNERS": ["*"], "MAX_SLEW_VIOLATION_CORNERS": ["*"],
                    "MAX_CAP_VIOLATION_CORNERS": ["*"],
                    "CTS_DISTANCE_BETWEEN_BUFFERS": 20, "CTS_CLK_MAX_WIRE_LENGTH": 50,
-                   # stricter repair TARGETS (official defaults 20 / 20 %); the constraints themselves
-                   # (0.75 ns, fanout 10, library max cap) are not raised
-                   "DESIGN_REPAIR_MAX_SLEW_PCT": 70, "DESIGN_REPAIR_MAX_CAP_PCT": 50},
+                   # sidecar section 9a: post-placement repair margins at the official 20 / 20 %, and the
+                   # official (experimental) post-global-route repair with its defaults 10 / 10 % and the
+                   # re-route on; the constraints (0.75 ns, fanout 10, library max cap) are not raised
+                   "DESIGN_REPAIR_MAX_SLEW_PCT": 20, "DESIGN_REPAIR_MAX_CAP_PCT": 20,
+                   "RUN_POST_GRT_DESIGN_REPAIR": True, "GRT_DESIGN_REPAIR_MAX_SLEW_PCT": 10,
+                   "GRT_DESIGN_REPAIR_MAX_CAP_PCT": 10, "GRT_DESIGN_REPAIR_RUN_GRT": True},
     },
 }
 
