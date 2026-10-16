@@ -45,10 +45,11 @@ jobs:
         uses: TinyTapeout/tt-gds-action/gl_test@395eedb3eeec3c2f4961c3b04ff2cf87f5525636 # ttsky26d
 
   # The viewer only PUBLISHES the 3D view to GitHub Pages. It is optional and is NOT a physical
-  # check: gds, precheck and gl_test above stay required on every push, on the same SHA. Pages
-  # is configured only on the default branch of the main repository, so on any other branch or
-  # on a fork the viewer job is SKIPPED (not failed, not masked). A skipped viewer proves
-  # nothing about the layout; only gds + precheck + gl_test do.
+  # check: gds, precheck and gl_test above stay required on every push, on the same SHA. The
+  # viewer job runs only on the default branch (main) of whichever repository runs the workflow
+  # and is SKIPPED on every other branch (not failed, not masked). On the default branch of a
+  # FORK it does run there; whether GitHub Pages is set up in that fork is not verified. A
+  # skipped viewer proves nothing about the layout; only gds + precheck + gl_test do.
   viewer:
     needs: gds
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)

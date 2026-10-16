@@ -11,12 +11,17 @@ sky130A, 50 MHz.
 This is work in progress for TTSKY26d, tracked in issue
 [#100](https://github.com/gHashTag/tt-trinity-phi/issues/100). Nothing has been submitted.
 
-- **Written, not yet verified by evidence in this repository:** the RTL, the reference model, the unit
-  sweeps, the pin-level tests, the negative controls and the workflows exist in the working tree, but no
-  result of running them is recorded here. Passing parse and typecheck of the `.t27` spec is the only
-  recorded check, and it does not execute the spec's assertions.
-- **Unknown until a GDS run of the final commit:** fit in one 1x1 tile, timing at 50 MHz, area.
-- **Not claimed:** performance, energy, TOPS/W, silicon results. No die of this design exists.
+- **Results are not recorded in this file** (a number written here goes stale). For any commit, read the
+  jobs of that exact commit in the GitHub Actions tab: `test.yaml` (spec assertions, oracle, unit
+  sweeps, pin tests, mutations, synthesis audit, archived comparison jobs), `gds.yaml`, `docs.yaml`, and
+  the older gates `no_star.yaml` and `tri-test.yml`. A job counts only if it is green on the SAME commit as
+  the others; the archived-file gates are treated as they are, not as proof for the active design.
+- **Only the `gds`, `precheck` and `gl_test` jobs of `gds.yaml` decide** fit in one 1x1 tile, the layout
+  checks and the gate-level result, on the commit being judged. The Yosys cell count in `test.yaml` is a
+  record, not an area or fit claim, and timing at 50 MHz is not established by anything but that run.
+  The optional `viewer` job only publishes a view and proves nothing.
+- **Not claimed:** performance, energy, TOPS/W, silicon results. No die of this design exists, and nothing
+  has been submitted.
 
 ## Where things are
 

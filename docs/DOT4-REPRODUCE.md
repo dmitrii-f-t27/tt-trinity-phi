@@ -78,9 +78,10 @@ to commit `395eedb3eeec3c2f4961c3b04ff2cf87f5525636`. The physical checks `gds`,
 download the artifacts and record their SHA256.
 
 The `viewer` job only publishes the layout view to GitHub Pages. It is optional and is not a physical
-check: it runs only on the default branch of the repository that has Pages configured, and it is
-SKIPPED on every other branch and on a fork (no `continue-on-error`, nothing masked). A skipped viewer
-is not a physical pass and not a failure; a green `gds` + `precheck` + `gl_test` is what counts.
+check: it runs only on the default branch (`main`) of whichever repository runs the workflow and is SKIPPED on
+every other branch (no `continue-on-error`, nothing masked). On the `main` of a fork it does run, and
+whether Pages is configured there is not verified. A skipped viewer is not a physical pass and not a
+failure; a green `gds` + `precheck` + `gl_test` is what counts.
 
 ## Archived comparison jobs
 `test/gf16_v2_verify.py`, `test/width_gate.py`, `test/gf_add_sweep.py`, `test/phi_audit.py` test archived
