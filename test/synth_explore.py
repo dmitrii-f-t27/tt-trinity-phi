@@ -291,9 +291,11 @@ def main():
             if not os.path.isfile(args.config):
                 problems.append("missing config %s" % args.config)
                 blocked = True
-            if os.path.exists(args.run_dir) and os.listdir(args.run_dir):
-                problems.append("run directory %s is not empty" % args.run_dir)
+            if os.path.exists(args.run_dir) and (not os.path.isdir(args.run_dir) or os.listdir(args.run_dir)):
+                problems.append("run directory %s exists and is not an empty directory" % args.run_dir)
                 blocked = True
+            if baseline is None:
+                blocked = True   # the baseline problem is already reported
             try:
                 version = importlib.metadata.version("librelane")
                 if version != LIBRELANE_VERSION:
@@ -302,6 +304,15 @@ def main():
             except importlib.metadata.PackageNotFoundError:
                 problems.append("python package librelane is not installed for %s" % sys.executable)
                 blocked = True
+            if not blocked:
+                # LibreLane's --force-run-dir requires an existing directory (the official project harden
+                # creates runs/wokwi before calling it). Every check above passed, so create our own EMPTY one;
+                # an existing directory is never removed or cleaned, and --no-run never creates anything.
+                try:
+                    os.makedirs(args.run_dir, exist_ok=True)
+                except OSError as e:
+                    problems.append("could not create run directory %s: %s" % (args.run_dir, e))
+                    blocked = True
             if not blocked:
                 try:
                     meta["flow_exit_code"] = run_flow(cmd, os.path.join(args.out, "synth-explore.log"))

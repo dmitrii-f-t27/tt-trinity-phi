@@ -143,7 +143,9 @@ therefore also runs `python3 test/synth_explore.py` (`if: always()`, artifact `S
 LibreLane 3.0.14 built-in `SynthesisExploration` flow (`python -m librelane --docker-no-tty --dockerized --flow
 SynthesisExploration`; `--docker-no-tty` must come BEFORE `--dockerized`, because the container entry reads it
 before the eager `--dockerized` option and forwards only the arguments after it; strategies AREA 0..3 and
-DELAY 0..4) on the same `src/config_merged.json`, PDK and cell exclusions, in `runs/synth-explore`
+DELAY 0..4) on the same `src/config_merged.json`, PDK and cell exclusions, in its own empty `runs/synth-explore` (`--force-run-dir` needs an existing directory, which the
+script creates only after every check passed; an existing non-empty directory blocks the run, nothing is removed,
+and `--no-run` creates nothing)
 (`runs/wokwi` is never touched). The built-in flow can exit 0 with a failed strategy hidden inside, so the nine
 rows (cells, area, worst r2r setup slack, worst setup slack, TNS) are rebuilt from the real step states: the
 strategy comes strictly from the normalised name of the custom STA directory (`<n>-sta-<strategy>`; the STA
