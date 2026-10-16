@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: Apache-2.0
+; gf16_dot4_addnorm_probe.t27 - measurement sidecar for issue #100: one extra official synthesis probe
+; Issue: https://github.com/gHashTag/tt-trinity-phi/issues/100 (draft PR #101). Written BEFORE the profiler code.
+; Status: measurement policy only. It is NOT a numeric contract and NOT a physical acceptance rule. The accepted
+; contract specs/numeric/gf16_dot4_sky26d.t27 is unchanged and stays the only DOT4 contract: exactly 8 enabled
+; clocks (E1..E8), GF16 S1E6M9 bias 31, MUL/ADD rounding, pins, reset, ena, READBACK, 1x1 at 20 ns.
+; Not executed: parse, typecheck and the test blocks below have not been run when this file was written.
+; Authors: Dmitrii Fedorov (@dmitrii-f-t27).
+; phi^2 + 1/phi^2 = 3 | TRINITY
+
+module physical-gf16_dot4_addnorm_probe;
+
+// ============================================================================
+// 1. What is measured
+// ============================================================================
+//
+// The official block profile (test/official_block_profile.py, gds.yaml step "Official block area profile")
+// gains ONE synthesis-only probe, add_norm14:
+//   DESIGN_NAME   gf16_add_norm14  (the module that ALREADY exists inside src/gf16_v2_add.v)
+//   VERILOG_FILES dir::gf16_v2_add.v  (the active file, unchanged; no new RTL module, no refactor)
+//   ports         input [13:0] x, output [13:0] norm, output [3:0] lz  (checked before the probe runs)
+// Every other config key is the official src/config_merged.json of the same SHA: same LibreLane 3.0.14,
+// PDK 8afc8346a57fe1ab7934ba5a6056ea8b43078e71, sky130_fd_sc_hd, cell exclusion union, filtered library,
+// SYNTH_STRATEGY, density and defines. Nothing is overridden. The flow stops at Yosys.Synthesis: no SDC, no
+// STA, no placement. The probe is not a timing, fit or GDS result.
+// The four existing probes (full, mul, add, storage) and the full calibration stay as they are.
+//
+// ============================================================================
+// 2. How the number may be read
+// ============================================================================
+//
+// The probe synthesises the normaliser alone, so it optimises across a different boundary than the adder.
+// It is NOT a share of the add probe: it must not be subtracted from add and must not be summed with any
+// other probe towards full. It is one measurement to choose a later area candidate, not a promised saving.
+//
+// ============================================================================
+// 3. Fail-closed rules (same as the existing probes)
+// ============================================================================
+//
+// The row is valid only if ALL hold: tool exit 0; exactly one synthesis step whose DESIGN_NAME is
+// gf16_add_norm14; every cell type is in the probe's own filtered library table with a finite positive area
+// (an unknown cell is a failure, never zero); weighted area equals stat and state area; provenance (config
+// keys, LibreLane version, Yosys creator, exclusion files, original and filtered library raw sha256) equals the
+// official run; the strategy equals the official one. The run as a whole passes only if the fresh full
+// calibration of the same SHA matches the official run (cells, area, per-type counts). Anything else is FAIL
+// with null values. A missing probe is reported as an explicit failed row, never left out of the report.
+//
+// ============================================================================
+// 4. Automatic checks of this sidecar and of the profiler (CI coverage policy, not acceptance)
+// ============================================================================
+//
+// spec-static job (test.yaml): runs test/test_official_block_profile.py (fixtures of the profiler) and
+// test/test_t27_addnorm_native_gate.py (fixtures of the adapter below). The numeric adapter test/t27_exec.py
+// stays bound to the numeric contract; it is not widened to accept this file.
+// t27-native job (test.yaml), AFTER the unchanged numeric gate test/t27_native_gate.py, with the same pinned
+// t27c, the same verified Zig and the same --t27-src/--t27-commit: test/t27_addnorm_native_gate.py on THIS file
+// only, output in its own folder native-addnorm. It requires:
+//   parse exit 0 with non-empty output; typecheck "0 errors, 0 warnings";
+//   test-report exit 0, not BLOCKED, exactly 2 tests (addnorm_probe_counts, addnorm_probe_fail_closed),
+//   pass 2, FAIL 0; an exit 0 without these counts is a failure;
+//   seal --save (never --force) and seal --verify "all hashes MATCH"; seal total 2, passed 2, failed 0, not
+//   forced, vacuous an integer 0..2, four real gen hashes, the pinned test-runner witness; no other seal file
+//   in the workspace changed;
+//   two negative controls, each changing ONE existing assertion of this file into a false one (the
+//   PROBE_COUNT constant assertion, and the all-ones probe_row_valid call assertion); each copy must
+//   parse and typecheck and then be DETECTED by test-report: exit 1 with FAIL >= 1, or BLOCKED because the
+//   generated Zig does not compile with "assertion failed". Any other outcome (missing tool, import or linker
+//   error, all green) fails the gate.
+// The adapter refuses the numeric spec and any other spec; it has no option to lower these expectations.
+
+pub const PROBE_COUNT : u16 = 5;
+pub const NORM_X_WIDTH : u16 = 14;
+pub const NORM_LZ_WIDTH : u16 = 4;
+pub const PROBE_IS_ADDITIVE : u16 = 0;
+pub const PROBE_IS_FIT_PROOF : u16 = 0;
+
+// 1 only when every fail-closed condition of section 3 holds (each argument is 1 for "holds")
+pub fn probe_row_valid(tool_ok: u16, design_ok: u16, cells_known: u16, area_consistent: u16, provenance_same: u16, strategy_same: u16) u16 {
+    return tool_ok & design_ok & cells_known & area_consistent & provenance_same & strategy_same;
+}
+
+// The whole profile passes only with every row valid AND a matching fresh full calibration
+pub fn profile_pass(rows_valid: u16, calibration_ok: u16) u16 {
+    return rows_valid & calibration_ok;
+}
+
+test "addnorm_probe_counts" {
+    assert(PROBE_COUNT == 5);
+    assert(NORM_X_WIDTH == 14);
+    assert(NORM_LZ_WIDTH == 4);
+    assert(PROBE_IS_ADDITIVE == 0);
+    assert(PROBE_IS_FIT_PROOF == 0);
+}
+
+test "addnorm_probe_fail_closed" {
+    assert(probe_row_valid(1, 1, 1, 1, 1, 1) == 1);
+    assert(probe_row_valid(0, 1, 1, 1, 1, 1) == 0);
+    assert(probe_row_valid(1, 0, 1, 1, 1, 1) == 0);
+    assert(probe_row_valid(1, 1, 0, 1, 1, 1) == 0);
+    assert(probe_row_valid(1, 1, 1, 0, 1, 1) == 0);
+    assert(probe_row_valid(1, 1, 1, 1, 0, 1) == 0);
+    assert(probe_row_valid(1, 1, 1, 1, 1, 0) == 0);
+    assert(profile_pass(1, 1) == 1);
+    assert(profile_pass(1, 0) == 0);
+    assert(profile_pass(0, 1) == 0);
+}
