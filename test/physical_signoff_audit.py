@@ -10,9 +10,12 @@ Step directories are found by the `meta.step` of their own config.json, not by n
   * exactly one OpenROAD.STAPostPNR step; its config: CLOCK_PERIOD 40 (25 MHz), DIE_AREA of the 1x2 template,
     MAX_TRANSITION_CONSTRAINT 0.75, MAX_FANOUT_CONSTRAINT 10, STA_CORNERS == the nine expected corners,
     EXTRA_EXCLUDED_CELLS == the three HD delay-family patterns plus exactly buf_1, clkbuf_1 and clkbuf_2
-    (section 9e) and exactly nor2_1 and nor2_2 (section 9f) (also in the Yosys.Synthesis config);
+    (section 9e; the 9f NOR2 floor was removed by section 9g) (also in the Yosys.Synthesis config);
   * exactly one OpenROAD.CTS step; its config: CTS_CLK_BUFFERS == [clkbuf_8, clkbuf_4] and
     CTS_ROOT_BUFFER == clkbuf_16 (section 9e);
+  * exactly one OpenROAD.RepairDesignPostGRT step; its config: GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH 50 (um),
+    GRT_DESIGN_REPAIR_MAX_SLEW_PCT 10, GRT_DESIGN_REPAIR_MAX_CAP_PCT 10, GRT_DESIGN_REPAIR_RUN_GRT True
+    (section 9g);
   * the checker steps accepted the strict corner wildcards: setup, hold, max slew and max cap all ["*"];
   * for EACH of the nine corners: <corner>/checks.rpt exists; metrics present, finite, numeric; setup and hold
     worst slack >= 0; setup/hold violation counts 0; max cap, max slew and max fanout violation counts 0 (the
@@ -42,12 +45,15 @@ SIDECAR = os.path.join("specs", "physical", "gf16_dot4_sky26d_1x2_25mhz_eval.t27
 
 CORNERS = ["%s_%s" % (rc, pvt) for rc in ("nom", "min", "max")
            for pvt in ("tt_025C_1v80", "ss_100C_1v60", "ff_n40C_1v95")]
-# exclusion PATTERNS of sidecar sections 9, 9e and 9f (fnmatch syntax, as LibreLane applies
-# EXTRA_EXCLUDED_CELLS): the three delay families, the exact buffer drive floor and the exact NOR2 drive floor
-# (buf_12 / clkbuf_16 / nor2b_1 do not match the exact names)
+# exclusion PATTERNS of sidecar sections 9 and 9e (fnmatch syntax, as LibreLane applies EXTRA_EXCLUDED_CELLS):
+# the three delay families and the exact buffer drive floor (buf_12 / clkbuf_16 do not match the exact
+# names). Section 9g removed the failed 9f NOR2 floor, so the list is exactly these 6.
 EXCLUDED = ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*", "sky130_fd_sc_hd__dlymetal*",
-            "sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2",
-            "sky130_fd_sc_hd__nor2_1", "sky130_fd_sc_hd__nor2_2"]
+            "sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2"]
+# post-global-route repair of section 9g, read from the OpenROAD.RepairDesignPostGRT step config (these keys
+# are not in the STAPostPNR config): numbers must be finite non-bool numbers, RUN_GRT literally True
+EXPECT_GRT_REPAIR = {"GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH": 50, "GRT_DESIGN_REPAIR_MAX_SLEW_PCT": 10,
+                     "GRT_DESIGN_REPAIR_MAX_CAP_PCT": 10}
 # CTS buffers of section 9e, read from the OpenROAD.CTS step config (the STAPostPNR config has no CTS keys)
 EXPECT_CTS = {"CTS_CLK_BUFFERS": ["sky130_fd_sc_hd__clkbuf_8", "sky130_fd_sc_hd__clkbuf_4"],
               "CTS_ROOT_BUFFER": "sky130_fd_sc_hd__clkbuf_16"}
@@ -194,6 +200,25 @@ class Audit:
             if cfg.get(key) != want:
                 self.fail("CTS %s is %r, expected %r" % (key, cfg.get(key), want))
 
+    def grt_repair(self):
+        """Exactly one OpenROAD.RepairDesignPostGRT step; its config must carry the section-9g wire length,
+        the 10 / 10 % margins and RUN_GRT True (a missing value, 0, a bool or another value fails)."""
+        d = self.one_step("OpenROAD.RepairDesignPostGRT")
+        if d is None:
+            return
+        cfg = self.read(os.path.join(d, "config.json"), "OpenROAD.RepairDesignPostGRT config")
+        if cfg is None:
+            return
+        keys = list(EXPECT_GRT_REPAIR) + ["GRT_DESIGN_REPAIR_RUN_GRT"]
+        self.report["grt_repair"] = {k: cfg.get(k) for k in keys}
+        for key, want in EXPECT_GRT_REPAIR.items():
+            got = cfg.get(key)
+            if number(got) is None or got != want:
+                self.fail("post-GRT repair %s is %r, expected %r" % (key, got, want))
+        if cfg.get("GRT_DESIGN_REPAIR_RUN_GRT") is not True:
+            self.fail("post-GRT repair GRT_DESIGN_REPAIR_RUN_GRT is %r, expected True"
+                      % cfg.get("GRT_DESIGN_REPAIR_RUN_GRT"))
+
     def checkers(self):
         self.report["checker_corners"] = {}
         for step_id, var in CHECKERS.items():
@@ -310,6 +335,7 @@ class Audit:
                 self.config(sta)
                 self.corners(sta)
             self.cts()
+            self.grt_repair()
             self.checkers()
             self.final(sta)
             self.netlist()
@@ -343,7 +369,7 @@ def markdown(rep):
               "Partial maxima over valid corners only: %s" % rep.get("known_max_partial"),
               "Final: %s" % rep.get("final"), "Checker corners: %s" % rep.get("checker_corners"),
               "Excluded cells in final netlist: %s" % rep.get("excluded_cell_hits"),
-              "CTS buffers: %s" % rep.get("cts"), ""]
+              "CTS buffers: %s" % rep.get("cts"), "Post-GRT repair: %s" % rep.get("grt_repair"), ""]
     if rep["problems"]:
         lines += ["Problems:"] + ["- " + p for p in rep["problems"]] + [""]
     lines += ["Sources (sha256):"] + ["- `%s` %s" % kv for kv in sorted(rep["sources_sha256"].items())]

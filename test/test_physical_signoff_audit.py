@@ -23,8 +23,8 @@ pub const SIGNOFF_ALLOWED_VIOLATIONS : u32 = 0;
 """
 
 
-# cells that the auditor's EXTRA exclusion list (sections 9e / 9f) must NOT match: stronger buffers and NOR2
-# sizes, and a NOR2B cell (buf_12 / clkbuf_16 / nor2b_1 share a prefix with excluded exact names). This only
+# cells that the auditor's EXTRA exclusion list (sections 9e / 9g) must NOT match: stronger buffers, NOR2
+# sizes and a NOR2B cell (buf_12 / clkbuf_16 share a prefix with excluded exact names). This only
 # shows they are not caught by these entries; it says nothing about the official no_synth / drc_exclude
 # filters, which stay unchanged and are applied by the flow.
 ALLOWED_NETLIST = ("sky130_fd_sc_hd__buf_2 u1 (.A(a), .X(x));\nsky130_fd_sc_hd__clkbuf_4 u2 (.A(a), .X(y));\n"
@@ -76,10 +76,15 @@ class Fixture:
         self.save_final()
         self.cts = os.path.join(self.run, "35-openroad-cts")
         self.save_cts(dict(psa.EXPECT_CTS))
+        self.grt = os.path.join(self.run, "41-openroad-repairdesignpostgrt")
+        self.save_grt(dict(psa.EXPECT_GRT_REPAIR, GRT_DESIGN_REPAIR_RUN_GRT=True))
         write(os.path.join(self.run, "final", "nl", "top.nl.v"), ALLOWED_NETLIST)
 
     def save_cts(self, cfg):
         write(os.path.join(self.cts, "config.json"), dict(cfg, meta={"step": "OpenROAD.CTS"}))
+
+    def save_grt(self, cfg):
+        write(os.path.join(self.grt, "config.json"), dict(cfg, meta={"step": "OpenROAD.RepairDesignPostGRT"}))
 
     def save_state(self):
         write(os.path.join(self.sta, "state_out.json"), {"metrics": self.metrics})
@@ -111,7 +116,8 @@ class AuditTests(unittest.TestCase):
         # parser check on made-up numbers only, not physical evidence
         rep = self.fx.audit()
         self.assertEqual(rep["verdict"], "PASS", rep["problems"])
-        # buf_2, clkbuf_4, buf_12, clkbuf_16, nor2_4, nor2_8 and nor2b_1 match none of the 8 exclusion entries
+        # buf_2, clkbuf_4, buf_12, clkbuf_16, nor2_4, nor2_8 and nor2b_1 match none of the 6 exclusion entries
+        self.assertEqual(rep["grt_repair"]["GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH"], 50)
         self.assertEqual(rep["excluded_cell_hits"], {})
 
     def test_absent_corner_fails(self):
@@ -223,23 +229,60 @@ class AuditTests(unittest.TestCase):
         write(os.path.join(self.fx.sta, "config.json"), cfg)
         self.assertFails("PnR EXTRA_EXCLUDED_CELLS")
 
-    def test_each_nor2_floor_cell_in_netlist_fails(self):
-        for cell in ("sky130_fd_sc_hd__nor2_1", "sky130_fd_sc_hd__nor2_2"):
-            with self.subTest(cell=cell):
-                write(os.path.join(self.fx.run, "final", "nl", "top.nl.v"),
-                      ALLOWED_NETLIST + "%s _1809_ (.A(a), .B(b), .Y(_0364_));\n" % cell)
-                rep = self.assertFails("excluded cells still in the final netlist")
-                self.assertEqual(rep["excluded_cell_hits"], {"%s (%s) in top.nl.v" % (cell, cell): 1})
+    # The 9f NOR2 floor (nor2_1, nor2_2) failed in CI and was removed by section 9g; its evidence is kept in
+    # Git and the private records, not as a test that would still demand it.
+    def test_6_entry_list_does_not_match_nor2_names(self):
+        write(os.path.join(self.fx.run, "final", "nl", "top.nl.v"),
+              ALLOWED_NETLIST + "sky130_fd_sc_hd__nor2_1 u8 (.A(a), .B(b), .Y(s));\n"
+              "sky130_fd_sc_hd__nor2_2 _1809_ (.A(a), .B(b), .Y(_0364_));\n")
+        rep = self.fx.audit()
+        self.assertEqual(rep["excluded_cell_hits"], {})
+        self.assertEqual(rep["verdict"], "PASS", rep["problems"])
 
-    def test_list_without_nor2_floor_fails(self):
-        # the 9e list (6 entries, no NOR2 floor) is not accepted any more, in PnR and in synthesis
-        cfg = dict(psa.EXPECT_CFG, STA_CORNERS=psa.CORNERS, EXTRA_EXCLUDED_CELLS=psa.EXCLUDED[:6],
+    def test_removed_9f_8_entry_list_fails(self):
+        nine_f = psa.EXCLUDED + ["sky130_fd_sc_hd__nor2_1", "sky130_fd_sc_hd__nor2_2"]
+        cfg = dict(psa.EXPECT_CFG, STA_CORNERS=psa.CORNERS, EXTRA_EXCLUDED_CELLS=nine_f,
                    meta={"step": "OpenROAD.STAPostPNR"})
         write(os.path.join(self.fx.sta, "config.json"), cfg)
         write(os.path.join(self.fx.run, "06-yosys-synthesis", "config.json"),
-              {"meta": {"step": "Yosys.Synthesis"}, "EXTRA_EXCLUDED_CELLS": psa.EXCLUDED[:7]})
+              {"meta": {"step": "Yosys.Synthesis"}, "EXTRA_EXCLUDED_CELLS": nine_f})
         rep = self.assertFails("PnR EXTRA_EXCLUDED_CELLS")
         self.assertTrue(any("synthesis EXTRA_EXCLUDED_CELLS" in p for p in rep["problems"]))
+
+    def test_missing_grt_repair_step_fails(self):
+        shutil.rmtree(self.fx.grt)
+        self.assertFails("expected exactly one OpenROAD.RepairDesignPostGRT step directory, found 0")
+
+    def test_grt_wire_length_missing_zero_wrong_or_bool_fails(self):
+        for bad in (None, 0, 0.0, 100, 49.9, True, "50"):
+            with self.subTest(value=bad):
+                cfg = dict(psa.EXPECT_GRT_REPAIR, GRT_DESIGN_REPAIR_RUN_GRT=True)
+                if bad is None:
+                    del cfg["GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH"]
+                else:
+                    cfg["GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH"] = bad
+                self.fx.save_grt(cfg)
+                self.assertFails("post-GRT repair GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH")
+
+    def test_grt_wire_length_50_as_decimal_accepted(self):
+        self.fx.save_grt(dict(psa.EXPECT_GRT_REPAIR, GRT_DESIGN_REPAIR_MAX_WIRE_LENGTH=50.0,
+                              GRT_DESIGN_REPAIR_RUN_GRT=True))
+        rep = self.fx.audit()
+        self.assertEqual(rep["verdict"], "PASS", rep["problems"])
+
+    def test_grt_margin_wrong_fails(self):
+        self.fx.save_grt(dict(psa.EXPECT_GRT_REPAIR, GRT_DESIGN_REPAIR_MAX_SLEW_PCT=20,
+                              GRT_DESIGN_REPAIR_RUN_GRT=True))
+        self.assertFails("post-GRT repair GRT_DESIGN_REPAIR_MAX_SLEW_PCT")
+        self.fx.save_grt(dict(psa.EXPECT_GRT_REPAIR, GRT_DESIGN_REPAIR_MAX_CAP_PCT=None,
+                              GRT_DESIGN_REPAIR_RUN_GRT=True))
+        self.assertFails("post-GRT repair GRT_DESIGN_REPAIR_MAX_CAP_PCT")
+
+    def test_grt_run_grt_false_or_not_bool_fails(self):
+        for bad in (False, 1, "true", None):
+            with self.subTest(value=bad):
+                self.fx.save_grt(dict(psa.EXPECT_GRT_REPAIR, GRT_DESIGN_REPAIR_RUN_GRT=bad))
+                self.assertFails("post-GRT repair GRT_DESIGN_REPAIR_RUN_GRT")
 
     def test_missing_cts_step_fails(self):
         shutil.rmtree(self.fx.cts)
