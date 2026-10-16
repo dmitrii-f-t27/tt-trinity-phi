@@ -25,6 +25,25 @@ jobs:
         with:
           pdk: sky130A
 
+      # Diagnosis only, NOT a fit proof and NOT part of the physical verdict. It runs even when Build
+      # GDS fails (the PDK stays on this runner); a red Build GDS stays red whatever this step does.
+      # It uses the host yosys (a different version from the GDS flow, recorded in the artifact) and
+      # the real sky130 hd liberty found on the runner. Any incomplete diagnosis (missing liberty,
+      # failed profile, a cell of unknown area) makes THIS step exit non-zero and report FAIL with no
+      # area numbers, never 0. If Build GDS itself passed and only the diagnosis failed, this job is
+      # red on purpose (fail closed). See test/area_profile.py.
+      - name: Area profile postmortem (hierarchical diagnosis)
+        if: always()
+        run: python3 test/area_profile.py --out area-profile
+
+      - name: Upload the area profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AREA_PROFILE
+          path: area-profile/
+          if-no-files-found: error
+
   precheck:
     needs: gds
     runs-on: ubuntu-24.04

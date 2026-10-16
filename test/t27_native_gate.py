@@ -75,6 +75,51 @@ def run(step, cmd, out_dir, env):
     return p
 
 
+def place_witness(t27_src, commit, created):
+    """Copy the pinned t27 test_report.rs to ./bootstrap/src/test_report.rs after checking that the
+    checkout is at the pinned commit and the file equals the git blob. Returns its sha256 hex."""
+    import hashlib
+    head = subprocess.run(["git", "-C", t27_src, "rev-parse", "HEAD"], capture_output=True, text=True)
+    if head.returncode != 0 or (commit and head.stdout.strip() != commit):
+        fail("t27 checkout is at %r, expected %r" % (head.stdout.strip(), commit))
+        return None
+    rel = "bootstrap/src/test_report.rs"
+    src = os.path.join(t27_src, rel)
+    blob = subprocess.run(["git", "-C", t27_src, "show", "HEAD:" + rel], capture_output=True)
+    if blob.returncode != 0 or not os.path.isfile(src):
+        fail("pinned t27 has no %s" % rel)
+        return None
+    with open(src, "rb") as f:
+        data = f.read()
+    if data != blob.stdout:
+        fail("%s in the checkout differs from the git blob at HEAD" % rel)
+        return None
+    if os.path.exists(rel):
+        fail("%s already exists in this repository; refusing to shadow it" % rel)
+        return None
+    for d in ("bootstrap", "bootstrap/src"):
+        if not os.path.isdir(d):
+            os.mkdir(d)
+            created.append(d)
+    with open(rel, "wb") as f:
+        f.write(data)
+    created.append(rel)
+    digest = hashlib.sha256(data).hexdigest()
+    print("test-runner witness: %s sha256 %s (pinned commit %s)" % (rel, digest, commit))
+    return digest
+
+
+def remove_witness(created):
+    for path in reversed(created):
+        try:
+            if os.path.isdir(path):
+                os.rmdir(path)
+            elif os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+
+
 def counts(out):
     nums = {}
     for key in ("tests", "pass", "FAIL"):
@@ -88,6 +133,9 @@ def main():
     ap.add_argument("--t27c", required=True)
     ap.add_argument("--spec", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--t27-src", default=None,
+                    help="checkout of the pinned t27 commit (source of the test runner witness)")
+    ap.add_argument("--t27-commit", default=None, help="the exact commit that checkout must be at")
     args = ap.parse_args()
 
     if not os.access(args.t27c, os.X_OK):
@@ -137,7 +185,21 @@ def main():
     summary["runtime_assert_vacuous_line"] = m.group(0) if m else None
     print("runtime-assert line:", summary["runtime_assert_vacuous_line"])
 
-    # 3. seal --save
+    # 3. seal --save, with the real test-runner source available to the seal command.
+    # t27 main.rs seal_toolchain() hashes the file `bootstrap/src/test_report.rs` RELATIVE TO THE
+    # WORKING DIRECTORY and records "missing" when it is absent; seal_spec_path() (main.rs) refuses a
+    # spec outside the working directory, so the seal must run from OUR repository root. The honest
+    # way to get a real witness is to make the real file from the pinned t27 commit visible at that
+    # relative path for the duration of the run: it is checked to be byte-identical to the git blob at
+    # the pinned commit, the t27c that runs was built from that same commit, and the temporary copy is
+    # removed afterwards. The seal JSON is never edited by hand.
+    witness_created = []
+    witness_hash = None
+    if args.t27_src:
+        witness_hash = place_witness(args.t27_src, args.t27_commit, witness_created)
+        summary["test_runner_witness_sha256"] = witness_hash
+    else:
+        print("note: no --t27-src given; seal.toolchain.test_runner will be 'missing' (origin metadata incomplete)")
     p = run("seal-save", [args.t27c, "seal", args.spec, "--save"], args.out, env)
     seal_path = None
     m = re.search(r"Seal saved to (\S+)", p.stdout)
@@ -176,12 +238,20 @@ def main():
         for k in ("gen_hash_zig", "gen_hash_verilog", "gen_hash_c", "gen_hash_rust"):
             if seal.get(k) in (None, "", "none", "missing"):
                 fail("seal %s is %r" % (k, seal.get(k)))
-        print("seal built_by / zig:", seal.get("built_by"), seal.get("toolchain", {}).get("zig"))
+        tool = seal.get("toolchain", {})
+        print("seal built_by / zig / test_runner:", seal.get("built_by"), tool.get("zig"), tool.get("test_runner"))
+        summary["seal_toolchain"] = tool
+        if witness_hash is not None and tool.get("test_runner") != "sha256:" + witness_hash:
+            fail("seal.toolchain.test_runner is %r, expected sha256:%s (the pinned test_report.rs)"
+                 % (tool.get("test_runner"), witness_hash))
+        if witness_hash is None and tool.get("test_runner") in (None, "missing"):
+            print("note: test_runner origin hash is 'missing' (no witness requested)")
 
     # 4. seal --verify
     p = run("seal-verify", [args.t27c, "seal", args.spec, "--verify"], args.out, env)
     if p.returncode != 0 or "all hashes MATCH" not in p.stdout:
         fail("seal --verify exit %d or not 'all hashes MATCH'" % p.returncode)
+    remove_witness(witness_created)      # the temporary witness copy never stays in the workspace
 
     # 5. negative control of the native compiler (never sealed)
     with open(args.spec) as f:

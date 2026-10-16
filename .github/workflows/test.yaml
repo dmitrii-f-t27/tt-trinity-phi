@@ -129,7 +129,9 @@ jobs:
           python3 test/t27_native_gate.py \
             --t27c "$GITHUB_WORKSPACE/t27-src/target/release/t27c" \
             --spec specs/numeric/gf16_dot4_sky26d.t27 \
-            --out native-t27
+            --out native-t27 \
+            --t27-src "$GITHUB_WORKSPACE/t27-src" \
+            --t27-commit 32c25e8798e33e03d5f6e7aee876df8629008a49
 
       - name: Upload the native outputs and the seal for review (not auto-committed)
         if: always()

@@ -106,6 +106,34 @@ from the 112 assertions executed by `test/t27_exec.py`; they are reported separa
 uploaded as the artifact `t27-native-gate`; the seal is NOT committed automatically; a person reviews the
 artifact first. `python3 test/t27_exec.py` (28 blocks) remains a separate cross-check, not the seal.
 
+### Seal origin metadata (test runner witness)
+`t27c seal` records `toolchain.test_runner` as the sha256 of the file `bootstrap/src/test_report.rs` read
+RELATIVE TO THE WORKING DIRECTORY (t27 `main.rs`, `seal_toolchain`), and `missing` when that file is absent;
+it also refuses a spec that is outside the working directory (`seal_spec_path`), so the seal must run from this
+repository's root. `t27_native_gate.py --t27-src t27-src --t27-commit 32c25e87...` therefore checks that the
+t27 checkout is at the pinned commit and that its `bootstrap/src/test_report.rs` is byte-identical to the git
+blob at that commit (the `t27c` that runs was built from the same commit), makes that real file visible at the
+relative path for the seal run, requires `seal.toolchain.test_runner` to equal `sha256:<that digest>`, and
+removes the temporary copy afterwards. The seal JSON is never edited by hand and `--force` is never used.
+
+## 9a. Hierarchical area diagnosis (CI, after Build GDS)
+`gds.yaml` runs `python3 test/area_profile.py --out area-profile` after the official Build GDS step with
+`if: always()` and uploads the artifact `AREA_PROFILE`. It installs the host `yosys` (a different version from the
+one inside the GDS flow; recorded), finds exactly one non-empty `sky130_fd_sc_hd__tt_025C_1v80.lib` on the runner,
+fetches archived commit `949a634` with `git fetch --depth=1 origin 949a634...` (no checkout, the branch is
+untouched) and synthesises, with the SAME recipe (`synth -flatten`, `dffunmap`, `dfflibmap`, `abc -liberty`,
+`stat -liberty`) and the same liberty: the carry-save multiplier alone; the multiplier with the hidden-1 bits
+constant; the adder of 949a634 and of the current commit; the full top of 949a634 and of the current commit;
+and the top with MUL and ADD as non-constant BLACKBOXES (storage, multiplexers and control only; the blackbox
+area is excluded and labelled so). Outputs: `AREA_PROFILE.md`, `area-profile.json`, `STATUS.txt`, per-profile
+logs, final `stat` reports (`*.stat.txt`) and `.ys` scripts, `commands.txt`, the liberty path and sha256. Only
+the final `stat` report is parsed. In the full and arithmetic profiles ANY cell of unknown area or unmapped cell
+makes that profile FAIL with no number; in the storage profile the only allowed unknown-area cells are exactly the
+blackboxes `gf16_v2_add` and `gf16_v2_mul` (explicitly excluded); anything else is FAIL. Any incomplete
+diagnosis makes the step exit non-zero (the artifact upload runs with `if: always()`); the step can never turn a
+red Build GDS green. It is a diagnosis (host yosys, not the GDS flow's version), not a fit proof; whether the
+liberty and tools exist on the runner is only confirmed by the CI run itself.
+
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
 non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty
