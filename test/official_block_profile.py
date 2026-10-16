@@ -2,13 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 """Block area profile in the OFFICIAL synthesis environment (diagnosis only; NOT a fit proof).
 
-Four synthesis-only measurements with the official LibreLane 3.0.14 (same docker image, same PDK, same cell
+Five synthesis-only measurements with the official LibreLane 3.0.14 (same docker image, same PDK, same cell
 exclusion union as the Build GDS step; `--flow Classic --to Yosys.Synthesis`, so nothing reaches SDC/STA and no
 timing is invented for the clock-less probes):
   full     the unchanged src/config_merged.json: the calibration. It must reproduce the strategy, cell count,
            area and per-type cell counts of the CURRENT official run (runs/wokwi, read only, never hard-coded).
   mul      DESIGN_NAME gf16_v2_mul (gf16_v2_mul.v + gf16_sig_mul10.v).
   add      DESIGN_NAME gf16_v2_add (gf16_v2_add.v).
+  add_norm14  DESIGN_NAME gf16_add_norm14, the normaliser module that already exists inside the active
+           gf16_v2_add.v (same file, nothing extracted). Policy: specs/physical/gf16_dot4_addnorm_probe.t27. It is
+           synthesised alone, so it is NOT a share of `add`: never subtract it from add or sum it towards full.
   storage  the real tt_um_trinity_nano with gf16_v2_mul and gf16_v2_add replaced by temporary black boxes that
            have their real port lists (parsed from the real sources); the arithmetic files are left out. The
            black-box instances are EXCLUDED from the area explicitly and reported as such, never as zero area
@@ -46,7 +49,7 @@ current official run, and the provenance matches. Missing values stay null. Noth
 
 Usage (repo root, after the official Build GDS step):
   python3 test/official_block_profile.py --out block-profile-out
-  python3 test/official_block_profile.py --no-run --runs-root <dir with full/mul/add/storage> --baseline-run <runs/wokwi copy> \
+  python3 test/official_block_profile.py --no-run --runs-root <dir with full/mul/add/add_norm14/storage> --baseline-run <runs/wokwi copy> \
       [--path-map /home/runner/work/tt-trinity-phi/tt-trinity-phi=<local root>] --out <dir>
 """
 import argparse
@@ -68,10 +71,12 @@ SRC = os.path.join(ROOT, "src")
 sys.path.insert(0, HERE)
 import synth_explore as se  # noqa: E402  (shared helpers: baseline, flow runner, json/number helpers)
 
-PROBES = ("full", "mul", "add", "storage")
+PROBES = ("full", "mul", "add", "add_norm14", "storage")
+TOP = "tt_um_trinity_nano"
 SYNTH_STEP = "Yosys.Synthesis"
 BB_MODULES = ("gf16_v2_mul", "gf16_v2_add")
 EXPECTED_PORTS = {("input", 15, 0, "a"), ("input", 15, 0, "b"), ("output", 15, 0, "result")}
+NORM_PORTS = {("input", 13, 0, "x"), ("output", 13, 0, "norm"), ("output", 3, 0, "lz")}
 PDK_VERSION = "8afc8346a57fe1ab7934ba5a6056ea8b43078e71"
 REQUIRED_CFG = ("PDK", "PDK_ROOT", "STD_CELL_LIBRARY", "SYNTH_EXCLUDED_CELL_FILE", "PNR_EXCLUDED_CELL_FILE",
                 "EXTRA_EXCLUDED_CELLS")
@@ -79,7 +84,28 @@ AREA_TOL = 0.01
 FILES = {
     "mul": ("gf16_v2_mul", ["gf16_v2_mul.v", "gf16_sig_mul10.v"]),
     "add": ("gf16_v2_add", ["gf16_v2_add.v"]),
+    # the existing normaliser module of the active adder file, synthesised alone (no new RTL module)
+    "add_norm14": ("gf16_add_norm14", ["gf16_v2_add.v"]),
 }
+
+
+def probe_design(name):
+    """DESIGN_NAME every probe is validated against; one table for config writing and for reading."""
+    return TOP if name in ("full", "storage") else FILES[name][0]
+
+
+def probe_config(base_cfg, name, bb_file=None):
+    """Temporary config of one synthesised probe: the official config with ONLY DESIGN_NAME and VERILOG_FILES
+    replaced (the full probe uses the official file itself and never passes through here)."""
+    if name == "full":
+        raise ValueError("the full probe uses the unmodified official config")
+    if name == "storage":
+        if not bb_file:
+            raise ValueError("the storage probe needs the black-box file")
+        files = ["dir::%s.v" % TOP, "dir::" + os.path.basename(bb_file)]
+    else:
+        files = ["dir::" + n for n in FILES[name][1]]
+    return dict(base_cfg, DESIGN_NAME=probe_design(name), VERILOG_FILES=files)
 
 
 def failed_row(reason, **extra):
@@ -245,7 +271,7 @@ def compare_fp(official, probe):
     return diffs
 
 
-def ports_of(path, module):
+def ports_of(path, module, expected=EXPECTED_PORTS):
     with open(path, encoding="utf-8") as f:
         text = re.sub(r"//[^\n]*", "", f.read())
     m = re.search(r"\bmodule\s+%s\s*\((.*?)\)\s*;" % module, text, re.S)
@@ -253,7 +279,7 @@ def ports_of(path, module):
         raise RuntimeError("module %s header not found in %s" % (module, path))
     found = {(d, int(hi), int(lo), n) for d, hi, lo, n in
              re.findall(r"\b(input|output)\s+(?:wire\s+|reg\s+)*\[(\d+):(\d+)\]\s*(\w+)", m.group(1))}
-    if found != EXPECTED_PORTS:
+    if found != expected:
         raise RuntimeError("unexpected ports of %s: %s" % (module, sorted(found)))
     return found
 
@@ -356,7 +382,8 @@ def write_reports(out, results, problems, meta):
               else "Calibration baseline unavailable (see problems).", "",
               "The probe areas are NOT additive: each probe optimises across a different boundary, so mul + add + storage "
               "is not the full area and this is not a physical partition. The storage probe excludes the area of the two "
-              "black boxes explicitly. 1-tile fit is decided by the main GDS job only."]
+              "black boxes explicitly. add_norm14 is the normaliser module synthesised alone: it is not a share of add "
+              "and must not be subtracted from add or summed towards full. 1-tile fit is decided by the main GDS job only."]
     for note in meta.get("notes", []):
         lines.append("Note: " + note)
     if problems:
@@ -424,6 +451,11 @@ def main():
                 if os.path.exists(rd) and (not os.path.isdir(rd) or os.listdir(rd)):
                     problems.append("run directory %s exists and is not an empty directory" % rd)
                     blocked = True
+            try:      # the normaliser probe needs the existing module with its real ports, nothing else
+                ports_of(os.path.join(SRC, FILES["add_norm14"][1][0]), FILES["add_norm14"][0], NORM_PORTS)
+            except (OSError, RuntimeError) as e:
+                problems.append("add_norm14: %s" % e)
+                blocked = True
             if not blocked:
                 base_cfg = se.read_json(args.config)
                 cfg_dir = os.path.dirname(os.path.abspath(args.config))
@@ -432,14 +464,10 @@ def main():
                     f.write(blackbox_text())
                     bb_path = f.name
                 created.append(bb_path)
-                files = {
-                    "mul": ["dir::" + n for n in FILES["mul"][1]],
-                    "add": ["dir::" + n for n in FILES["add"][1]],
-                    "storage": ["dir::tt_um_trinity_nano.v", "dir::" + os.path.basename(bb_path)],
-                }
-                designs = {"mul": FILES["mul"][0], "add": FILES["add"][0], "storage": base_cfg["DESIGN_NAME"]}
-                for name in ("mul", "add", "storage"):
-                    cfg = dict(base_cfg, DESIGN_NAME=designs[name], VERILOG_FILES=files[name])
+                for name in PROBES:
+                    if name == "full":
+                        continue
+                    cfg = probe_config(base_cfg, name, bb_path)
                     with tempfile.NamedTemporaryFile("w", dir=cfg_dir, prefix="phi_probe_%s_" % name, suffix=".json",
                                                      delete=False, encoding="utf-8") as f:
                         json.dump(cfg, f, indent=2)
@@ -471,7 +499,6 @@ def main():
                     f.write(" ".join(cmd) + "\n")
 
         if not refused and (not blocked or args.no_run):
-            designs = {"full": "tt_um_trinity_nano", "mul": "gf16_v2_mul", "add": "gf16_v2_add", "storage": "tt_um_trinity_nano"}
             off_fp, off_table, off_problems = fingerprint(args.baseline_run, path_map)
             meta["provenance"]["official"] = off_fp
             problems += ["official provenance: " + p for p in off_problems]
@@ -480,7 +507,7 @@ def main():
                 fp, table, fp_problems = fingerprint(rd, path_map)
                 meta["provenance"][name] = fp
                 problems += ["%s provenance: %s" % (name, p) for p in fp_problems]
-                results[name] = read_probe(rd, designs[name], allow_bb=(name == "storage"), table=table)
+                results[name] = read_probe(rd, probe_design(name), allow_bb=(name == "storage"), table=table)
                 if results[name]["status"] != "valid":
                     problems.append("%s: %s" % (name, results[name]["reason"]))
                 if fp is not None and off_fp is not None:

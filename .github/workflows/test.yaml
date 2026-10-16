@@ -26,6 +26,14 @@ jobs:
       - name: Source list == Makefile == instantiated files, pins, official action pin, no '*'
         run: python3 test/check_project.py
 
+      # Fixtures only (no LibreLane, Docker, PDK, t27c or Zig): the official block profiler with its add_norm14
+      # probe, and the native adapter of specs/physical/gf16_dot4_addnorm_probe.t27 on fake tool outputs.
+      - name: Block-profile fixtures (five probes incl. add_norm14, fail-closed, calibration, provenance)
+        run: python3 test/test_official_block_profile.py
+
+      - name: Fixtures of the native adapter for the add_norm14 measurement sidecar
+        run: python3 test/test_t27_addnorm_native_gate.py
+
   unit-full:
     name: Isolated MUL/ADD vs exact oracle (full sweeps, 0 mismatches)
     runs-on: ubuntu-24.04
@@ -133,12 +141,33 @@ jobs:
             --t27-src "$GITHUB_WORKSPACE/t27-src" \
             --t27-commit 32c25e8798e33e03d5f6e7aee876df8629008a49
 
+      # Runs only after the numeric gate above passed (same pinned t27c, Zig and witness arguments). One fixed
+      # profile: the measurement sidecar, exactly 2 tests, its own two negative controls, own output folder.
+      - name: Native gate of the add_norm14 measurement sidecar (parse, typecheck, test-report 2/2, seal, 2 negative controls)
+        run: |
+          set -euo pipefail
+          test -z "${T27C_TEST_REPORT_EXIT_ZERO:-}"
+          python3 test/t27_addnorm_native_gate.py \
+            --t27c "$GITHUB_WORKSPACE/t27-src/target/release/t27c" \
+            --spec specs/physical/gf16_dot4_addnorm_probe.t27 \
+            --out native-addnorm \
+            --t27-src "$GITHUB_WORKSPACE/t27-src" \
+            --t27-commit 32c25e8798e33e03d5f6e7aee876df8629008a49
+
       - name: Upload the native outputs and the seal for review (not auto-committed)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: t27-native-gate
           path: native-t27/
+          if-no-files-found: error
+
+      - name: Upload the native outputs of the add_norm14 sidecar (not auto-committed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t27-native-addnorm
+          path: native-addnorm/
           if-no-files-found: error
 
   # ---- compatibility jobs kept from the archived baseline (they test archived files) ----

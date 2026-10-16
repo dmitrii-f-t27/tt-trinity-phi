@@ -181,7 +181,7 @@ the `fa_1` count in `06-yosys-synthesis/reports/stat.json` and the new area/cell
 
 ## 9d. Official block area profile (CI, after Build GDS)
 The host profile of 9a is not the official recipe, so `gds.yaml` also runs `python3 test/official_block_profile.py`
-(`if: always()`, artifact `BLOCK_PROFILE`): four synthesis-only runs of the official LibreLane 3.0.14
+(`if: always()`, artifact `BLOCK_PROFILE`): five synthesis-only runs of the official LibreLane 3.0.14
 (`--docker-no-tty` before `--dockerized`, `--flow Classic --to Yosys.Synthesis`, so nothing reaches SDC/STA), same
 image, PDK and exclusion union. The provenance of the official run and of every probe is read from that run's single
 synthesis step: `extra.json` `libs_synth` (the filtered libraries the mapper really read; each must exist on the host,
@@ -195,14 +195,17 @@ the real Yosys version from `stat.json` and the docker image id. Missing or unav
 must be in its own table with a finite positive area (no name accepted by prefix), counts must be positive integers
 and the weighted sum must equal the stat and state area (0.01 um2). `full` is the unchanged `src/config_merged.json` and must reproduce the strategy,
 cell count, area and per-type cell counts of the current `runs/wokwi` (read only, never hard-coded); `mul`
-(`gf16_v2_mul` + `gf16_sig_mul10`) and `add` (`gf16_v2_add`) change only `DESIGN_NAME` and `VERILOG_FILES`;
+(`gf16_v2_mul` + `gf16_sig_mul10`), `add` (`gf16_v2_add`) and `add_norm14` (`DESIGN_NAME` `gf16_add_norm14`, the
+normaliser module that already exists inside the unchanged `gf16_v2_add.v`; ports checked before the run; policy in
+`specs/physical/gf16_dot4_addnorm_probe.t27`) change only `DESIGN_NAME` and `VERILOG_FILES`;
 `storage` is the real top with temporary black boxes for the two arithmetic modules (real port lists parsed from the
 sources, the arithmetic files left out). Temporary configs and the black-box file are written next to
 `src/config_merged.json` so the `dir::` paths resolve as in the official run, are copied into the artifact and only
 the files created by the run are removed; no exclusion list, strategy, density or define is overridden. The area of
 the two black boxes is reported as EXCLUDED (not zero, not unknown); exactly those two are allowed, any other cell of
 unknown area fails the probe. The probes optimise across different boundaries: their areas are not additive and are
-not a physical partition. Any missing, non-finite or non-positive value, calibration mismatch, exclusion/library
+not a physical partition. In particular `add_norm14` is the normaliser synthesised alone: it must not be subtracted
+from `add` or summed towards `full`, and its area says nothing about fit. Any missing, non-finite or non-positive value, calibration mismatch, exclusion/library
 mismatch with the official run or tool error makes the step exit non-zero; the artifact is always uploaded and a red
 Build GDS is never masked. `--no-run --runs-root <dir> --baseline-run <dir>` validates copies. A diagnosis, not a fit proof.
 
