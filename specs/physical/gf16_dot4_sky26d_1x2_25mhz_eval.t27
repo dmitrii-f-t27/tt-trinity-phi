@@ -322,3 +322,52 @@ invariant eval_eight_clocks
 // exactly-8-enabled-clocks latency, GF16 S1 E6 M9 bias 31, the independent A/B
 // operands, the interface, the RTL or the numeric spec (sha256
 // 01249989ab5688eb78fc6950880238102daf6608b7cf1946b29b7277f53003c9).
+//
+// ----------------------------------------------------------------------------
+// 9c. Controlled same-final-design observation: global-route vs extracted RC
+// ----------------------------------------------------------------------------
+// Observation policy written BEFORE any instrumentation; it fixes the method and
+// the guards, promises no result and pre-selects no repair.
+// Known: from stage 41 to the final f6f4db6 design no cell master was removed or
+// changed; 4097 cells were added (3147 decap_3, 518 fill_1, 431 fill_2, 1
+// diode_2); the shared configs differ only in metadata and the SDC is identical
+// (sha256 7d7d6e0593a574e81fcc53e34f352d9f44a60033ce0f2352276c7a879e057394).
+// Stage 41 on its stored global routes (C0, section 9b) gave 88 slew pins in each
+// ss corner; the final sign-off on extracted RC gave 293 / 228 / 147 / 11. Which
+// part of that difference is the parasitic model is NOT established: the stage-41
+// values were printed with 2 decimals, the final ones with 6.
+// Inputs and envelope exactly as section 9b (archived artifact 12026633781 of run
+// 38855207187, the pinned image and PDK); all 9 strict corners, 0.75 ns, fanout 10
+// and library cap limits, the 1x2 / 40 ns envelope, exactly 8 enabled clocks,
+// GF16 S1 E6 M9 bias 31, the A/B operands and the interface are unchanged. Nothing
+// is allocated or submitted; a 1x2 result is not acceptance of issue #100.
+// Matrix, one process per design, same config, SDC and liberty files:
+//   C1  final ODB, global-route estimate: grt::have_routes is recorded first; with
+//       stored routes, estimate_parasitics -global_routing; without, global routing
+//       may be reconstructed in memory and is labelled RECONSTRUCTED (never an
+//       exact route replay).
+//   C2  the SAME final ODB in the same process, no resize, placement or netlist
+//       change, then the 3 final SPEF files read explicitly for each of the 9
+//       corners. C2 is the calibration: it must reproduce the archived final
+//       per-corner pin sets and counts exactly (293 / 228 / 147 / 11 slew, 0 in
+//       the other corners, cap and fanout 0); any difference fails the diagnostic.
+//   C1 vs C2 isolates the parasitic model only if the logical and placement
+//   records are unchanged between them and stored global routes were used.
+//   C3  the stage-39 ODB (input of stage 41), read only: for the 8 stage-41
+//       drivers, master, dont-touch and role before the post-global-route repair,
+//       compared with stage 41. Final SPEF is never applied to the stage-41 design.
+// Recorded per corner and kind: violating pins with limit and slew to 6 decimals,
+// raw reports; for each violating driver: its net pins, wire and total capacitance
+// and loads from report_net (-corner, -digits 6), pin and master from OpenDB, and
+// clock role from the STA clocks on the pin, not from the cell type or from the
+// liberty is_clock attribute. Per-pin STA properties are read after setting the
+// command corner for each corner. Only commands and SWIG APIs confirmed in the
+// cached primary sources are used; an unavailable value is UNKNOWN, never zero.
+// Guards: every input hashed before and after; logical and placement records
+// identical; SPEF annotation coverage checked and any unmatched net or pin fails;
+// a missing corner, pin, kind or model fails; raw reports and provenance kept.
+// The strict physical gates and the product recipe are not changed or disabled.
+// Diagnostic COMPLETE is a measurement, not a sign-off, and carries no causal
+// claim beyond what the paired comparison shows. A repair is chosen only after
+// this paired measurement; this policy does not pre-select a stricter fanout,
+// a cell exclusion or any other change.
