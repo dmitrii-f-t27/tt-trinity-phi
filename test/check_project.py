@@ -107,6 +107,43 @@ def star_gate(files):
             fail("%s contains an arithmetic '*' near line(s) %s (R-SI-1)" % (fname, line[:5]))
 
 
+TECH_CELL = "sky130_fd_sc_hd__fa_1"
+TECH_WRAPPER = "gf16_fa1"
+TECH_FILE = "gf16_sig_mul10.v"
+
+
+def tech_cell_gate():
+    """Technology cells in src/ are forbidden except ONE: sky130_fd_sc_hd__fa_1, instantiated exactly once,
+    inside the wrapper module gf16_fa1 of gf16_sig_mul10.v, and only in the branch that is compiled when
+    PHI_FA_PHYS (set by the official __pnr__ flow define) is on. No other sky130 name may appear in any
+    src file (the unknown-instance check above ignores names that are not project modules, so this gate
+    is what keeps the allow-list narrow). The PDK or black-box definition supplies the cell; src/ never
+    declares it."""
+    for path in sorted(glob.glob(os.path.join(SRC, "*.v"))):
+        fname = os.path.basename(path)
+        text = strip_comments(read(path))
+        for name in sorted(set(re.findall(r"\bsky130\w*", text))):
+            if name != TECH_CELL:
+                fail("%s mentions technology cell/name %s (only %s is allowed)" % (fname, name, TECH_CELL))
+        if TECH_CELL not in text:
+            continue
+        if fname != TECH_FILE:
+            fail("%s instantiates %s (allowed only in %s)" % (fname, TECH_CELL, TECH_FILE))
+            continue
+        if len(re.findall(r"\b%s\b" % TECH_CELL, text)) != 1:
+            fail("%s must mention %s exactly once" % (fname, TECH_CELL))
+        m = re.search(r"\bmodule\s+%s\b(.*?)\bendmodule\b" % TECH_WRAPPER, text, re.S)
+        if not m or TECH_CELL not in m.group(1):
+            fail("%s must be instantiated inside module %s" % (TECH_CELL, TECH_WRAPPER))
+        elif not re.search(r"`ifdef\s+PHI_FA_PHYS\b(.*?)`else", m.group(1), re.S) \
+                or TECH_CELL not in re.search(r"`ifdef\s+PHI_FA_PHYS\b(.*?)`else", m.group(1), re.S).group(1):
+            fail("%s must sit in the `ifdef PHI_FA_PHYS branch of %s" % (TECH_CELL, TECH_WRAPPER))
+        if not re.search(r"`ifdef\s+__pnr__\s*`define\s+PHI_FA_PHYS\s*`endif", text):
+            fail("%s must enable PHI_FA_PHYS only through `ifdef __pnr__" % fname)
+        if re.search(r"\bmodule\s+sky130", text):
+            fail("%s declares a sky130 module (the PDK supplies it)" % fname)
+
+
 def workflows():
     for name in ("gds.yaml", "docs.yaml"):
         path = os.path.join(ROOT, ".github", "workflows", name)
@@ -181,6 +218,7 @@ def main():
         fail("info.yaml source_files %s != files instantiated from %s: %s"
              % (sorted(info_files), TOP, sorted(inst)))
     star_gate(sorted(inst))
+    tech_cell_gate()
     workflows()
     req = os.path.join(HERE, "requirements.txt")
     if not os.path.isfile(req) or "cocotb==2.0.1" not in read(req):

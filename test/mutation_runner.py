@@ -32,6 +32,7 @@ import check_results
 TOP = "tt_um_trinity_nano.v"
 MUL = "gf16_v2_mul.v"
 ADD = "gf16_v2_add.v"
+SIGMUL = "gf16_sig_mul10.v"
 
 # (name, file, old text, new text, tests of which at least one must fail with PINFAIL)
 MUTATIONS = [
@@ -88,6 +89,13 @@ MUTATIONS = [
     ("add_far_threshold_too_low", ADD,
      "wire        far  = (|dif[5:4]) | (dif[3] & dif[2] & (dif[1] | dif[0]));",
      "wire        far  = (|dif[5:4]) | dif[3];",
+     ["test_03_independent_ab_conformance", "test_14_random_vectors"]),
+    # The generic full adder of the carry-save multiplier loses the (b & cin) carry term. The pin tests
+    # must see a wrong product (this protects the generic branch that all RTL simulation runs; the cell
+    # branch is checked separately by test/physical_fa_check.py).
+    ("fa_carry_term_dropped", SIGMUL,
+     "assign cout = (a & b) | (a & cin) | (b & cin);",
+     "assign cout = (a & b) | (a & cin);",
      ["test_03_independent_ab_conformance", "test_14_random_vectors"]),
 ]
 

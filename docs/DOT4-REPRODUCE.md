@@ -59,7 +59,7 @@ python3 test/check_results.py test/results.xml test/test.py
 ```
 python3 test/mutation_runner.py       # inside the cocotb venv; copies src/ and test/ to a temp dir
 ```
-It first requires the unmodified RTL to pass all tests, then applies 15 mutations (the 11 original ones plus four for the explicit write enables, the readback group select, the staged alignment sticky and a too-low far-alignment threshold; a mutation that cannot change the GF16 result, such as turning the far jam 1 into 0, is deliberately NOT included because an equivalent mutant cannot be killed) to the temporary
+It first requires the unmodified RTL to pass all tests, then applies 16 mutations (the 11 original ones plus four for the explicit write enables, the readback group select, the staged alignment sticky and a too-low far-alignment threshold, plus one that drops a carry term of the generic full adder in the multiplier; a mutation that cannot change the GF16 result, such as turning the far jam 1 into 0, is deliberately NOT included because an equivalent mutant cannot be killed) to the temporary
 copy (B forced to 0, wrong `uio_oe`, signature shown as a result, result visible while busy, ERR never
 set, WR/GO priority swapped, `ena` ignored, GO not resetting PTR, wrong MUL tie, wrong ADD tie, no sticky
 bit) and requires every one to be KILLED by a PINFAIL; a surviving mutation or an infrastructure error
@@ -160,6 +160,24 @@ RTL change, and if the official strategy changes later, that strategy is the one
 measurement, not a fit proof: a smaller area does not mean one-tile fit; only the main GDS job on the last SHA
 decides that. No config, PDK, clock, tile or exclusion is changed. `--no-run --run-dir <dir> --baseline-run <dir>`
 validates existing directories (for example a copied official run) without running the flow.
+
+## 9c. Carry-save multiplier on the technology full adder (one structural change)
+`src/gf16_sig_mul10.v` keeps its interface and its function for all 2^20 operand pairs, but the carry-save array
+is written sparse: bits that are known zero are folded by hand, so 0 terms vanish, 1 term is a wire, 2 terms are a
+half adder in plain xor/and logic and only 3-term positions use the full adder `gf16_fa1` (80 full adders, 10 half
+adders). `gf16_fa1` has a generic logic branch (simulation, host audit, unit sweeps, mutations) and, when the
+official LibreLane synthesis defines `__pnr__` (or `PHI_FA_PHYS` is set), one `sky130_fd_sc_hd__fa_1` cell, which the
+PDK black-box or Verilog model supplies (nothing is declared in `src/`; `fa_1` is allowed by the PDK exclusion
+lists, `ha_*`, `maj3_*`, `fa_4` and the `_0`/`_1` logic cells are not used). `test/check_project.py` allows exactly
+that one cell, once, inside `gf16_fa1`. The generic simulation is NOT a proof for the cell branch: after Build GDS,
+`test/physical_fa_check.py` (artifact `PHYSICAL_FA_CHECK`) compiles the project with `PHI_FA_PHYS` and the real
+`primitives.v` + `sky130_fd_sc_hd.v` of the pinned PDK `8afc8346...` (exactly one directory, sha256 recorded; no
+fallback model) and requires: the 8 truth cases of the cell and wrapper, all 1048576 products equal to the integer
+product with mismatch 0 and exit 0 (an unknown or missing result is a failure; the wait per vector is a
+conservative simulation setting, not timing), and a negative control (cell outputs swapped) that must be caught.
+It is a PDK-model simulation, not a layout/LVS proof; the gate-level pin test remains required. The host profile of
+9a is generic and does not predict the cell branch. No area, timing or fit is claimed before the official GDS: read
+the `fa_1` count in `06-yosys-synthesis/reports/stat.json` and the new area/cells there.
 
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
