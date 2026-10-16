@@ -49,6 +49,27 @@ FINAL_SLEW_PINS = {"max_ss_100C_1v60": 293, "nom_ss_100C_1v60": 228, "min_ss_100
 KINDS = ("slew", "cap", "fanout")
 FINAL_STA_DIR = "runs/wokwi/56-openroad-stapostpnr/"
 
+# Section 9c pinned archive members (sha256 from the Root input manifest of the same archive)
+STATE41_IN = STAGE41 + "state_in.json"
+STATE56_IN = FINAL_STA_DIR + "state_in.json"
+PINNED_STATES = {STATE41_IN: "70567c46dc57324a405575be84753c9f37d921e3ae98842b72c6189f4bfce65b",
+                 STATE56_IN: "eef94b5ef87dc2f254148df411a4084762b2b1d880fe267a557b36bcd5ea374f"}
+SPEF_SHA256 = {"NOM": "d66be38411e2db5f707b6da93628b37b924268e198e4e5dc14e1b9433188b241",
+               "MIN": "4b49f8dd1b27fe9d86315ede0c36d267316b6f034e2a71a4f7a510fda77614bd",
+               "MAX": "d26a33b1e3e5f16a0df52f155114039d623e7e1ae3f83b20fd49ea7f0d087fae"}
+FINAL_CHECKS_SHA256 = {
+    "max_ff_n40C_1v95": "3eb14163127014dbd37d638a822dff666efd1bd66aa6252eafb6a462b5b79322",
+    "max_ss_100C_1v60": "1e8099f23a22b0c133d0c8d9243b5e9966b3a34eaf5b7185466c276cfaca4d1f",
+    "max_tt_025C_1v80": "5dede26f767d690d80421e962c62b7dcace3611e2fd87c400896baaf2bf8af14",
+    "min_ff_n40C_1v95": "aab1fe08b614479c9e4d8ddc8bc373061ad22ead04b77e11fb7d311f4b2e83ce",
+    "min_ss_100C_1v60": "ab325f40dcf1c67466078dfa8583b24e0f51976a81cee51b0e1dda57866d11cf",
+    "min_tt_025C_1v80": "2e9a5c95d4409fc5217fd3772fc9cd03720909d30eefdeeea88d8953f7bac342",
+    "nom_ff_n40C_1v95": "afc0a77757672ec6dda61197f19988b7fcd9ae9da848f50fd6ef16f0293b8dfc",
+    "nom_ss_100C_1v60": "859b9ddab422f0ba18baf5cd106205e9f58cbf14afedfa87c912453a4fad36ee",
+    "nom_tt_025C_1v80": "fb2ef6cbdf23eeecf2ad3de546ec435c55a3694afcb7e93ff6fdc0b1747200a5",
+}
+SECTION = {"max slew": "slew", "max capacitance": "cap", "max fanout": "fanout"}
+
 
 def sha256_file(path):
     h = hashlib.sha256()
@@ -131,3 +152,51 @@ def parse_final_counts(text):
     if len(slew_rows) != counts["slew"]:
         raise ValueError("final report has %d max-slew rows but footer %d" % (len(slew_rows), counts["slew"]))
     return counts
+
+
+def parse_final_rows(text):
+    """Archived final checks.rpt -> {kind: [(pin, limit, value, slack)]} from its report_check_types
+    region, each kind's row count equal to its footer. Rows under an unknown header raise ValueError."""
+    counts = parse_final_counts(text)
+    m = re.search(r"report_check_types[^\n]*\n(.*?)^\s*report_parasitic_annotation", text, re.M | re.S)
+    if not m:
+        raise ValueError("final report has no report_check_types region")
+    out = {k: [] for k in KINDS}
+    kind = None
+    for line in m.group(1).splitlines():
+        s = line.strip()
+        if s in SECTION:
+            kind = SECTION[s]
+            continue
+        if s.endswith("(VIOLATED)"):
+            if kind is None:
+                raise ValueError("final violator row outside a known section: %r" % s)
+            out[kind] += parse_rows(s)
+    for k in KINDS:
+        if len(out[k]) != counts[k]:
+            raise ValueError("final report %s rows %d != footer %d" % (k, len(out[k]), counts[k]))
+    return out
+
+
+def parse_annotation(text):
+    """report_parasitic_annotation -report_unannotated text -> (unannotated set, partial set). The
+    'Found N ...' counts must equal the listed names; missing headers raise ValueError."""
+    m1 = re.search(r"^Found (\d+) unannotated drivers\.\s*$", text, re.M)
+    m2 = re.search(r"^Found (\d+) partially unannotated drivers\.\s*$", text, re.M)
+    if not m1 or not m2 or m2.start() < m1.end():
+        raise ValueError("annotation report headers missing or out of order")
+    names1 = [l.strip() for l in text[m1.end():m2.start()].splitlines() if l.strip()]
+    tail = text[m2.end():]
+    names2 = []
+    for l in tail.splitlines():
+        if not l.strip():
+            if names2:
+                break
+            continue
+        if not l.startswith((" ", "\t")):
+            break
+        names2.append(l.strip())
+    if len(names1) != int(m1.group(1)) or len(names2) != int(m2.group(1)):
+        raise ValueError("annotation counts do not match listed names (%s/%d, %s/%d)"
+                         % (m1.group(1), len(names1), m2.group(1), len(names2)))
+    return set(names1), set(names2)

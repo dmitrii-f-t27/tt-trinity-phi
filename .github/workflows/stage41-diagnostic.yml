@@ -1,7 +1,8 @@
 ---
 name: stage41-diagnostic
 
-# READ-ONLY observation of the archived stage-41 database of f6f4db6 (sidecar section 9b). It measures; it does
+# READ-ONLY observation of the archived stage-41 database of f6f4db6 (sidecar section 9b), and of the archived
+# final and stage-39 databases (section 9c: paired C1/C2 calibration, C3 metadata). It measures; it does
 # not repair, resize, place, build a GDS or change any limit, and it does not replace or weaken any official
 # workflow (gds, test, docs, format, no-star run unchanged on the same push). A green job means only that the
 # measurement is complete; any non-zero slew remains a physical FAIL.
@@ -40,6 +41,7 @@ jobs:
         run: python3 test/test_stage41_diagnostic.py -v
 
       - name: Fetch and verify the archived artifact (metadata, zip sha256, safe extraction, member hashes)
+        id: fetch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -48,6 +50,7 @@ jobs:
           python3 diagnostics/stage41/fetch_verify.py --dest "$RUNNER_TEMP/s41" --report diag-out/fetch-report.json
 
       - name: Pull the pinned image and verify its ID
+        id: image
         run: |
           set -euo pipefail
           docker pull --platform linux/amd64 "$IMAGE"
@@ -56,6 +59,7 @@ jobs:
           test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$IMAGE")" = "linux/amd64"
 
       - name: Bootstrap the pinned PDK (network only here, public PDK)
+        id: pdk
         run: |
           set -euo pipefail
           mkdir -p "$PDK_ROOT"
@@ -92,6 +96,52 @@ jobs:
           if [ -d "$RUNNER_TEMP/s41-obs" ]; then cp -r "$RUNNER_TEMP/s41-obs" diag-out/observation; fi
           python3 diagnostics/stage41/summarize.py --obs "$RUNNER_TEMP/s41-obs" \
             --runs "$RUNNER_TEMP/s41/extract/runs" --fetch-report diag-out/fetch-report.json --out diag-out
+
+      # Sidecar section 9c: the archived FINAL database with the stage-41 config, global-route estimate (C1) then
+      # the final SPEF files (C2) in the same process; and the read-only stage-39 metadata (C3). A derived state
+      # holding only the parent "odb" is written to the output directory; no archived file is written.
+      - name: Paired C1/C2 observation of the final database (no network, archive and PDK read-only)
+        if: ${{ !cancelled() && steps.fetch.outcome == 'success' && steps.image.outcome == 'success' && steps.pdk.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/s41-paired"
+          docker run --rm --network none --platform linux/amd64 \
+            -v "$RUNNER_TEMP/s41/extract/runs:$RUNS_MOUNT:ro" \
+            -v "$GITHUB_WORKSPACE/src:$WORK_ROOT/src:ro" \
+            -v "$PDK_ROOT:$PDK_ROOT:ro" \
+            -v "$GITHUB_WORKSPACE/diagnostics/stage41:/diag:ro" \
+            -v "$RUNNER_TEMP/s41-paired:/obs" \
+            "$IMAGE" python3 /diag/measure_step.py --mode paired \
+              --config "$STAGE41/config.json" --state-in "$RUNS_MOUNT/wokwi/56-openroad-stapostpnr/state_in.json" \
+              --pdk-root "$PDK_ROOT/ciel/sky130/versions/$PDK_VERSION" --tcl /diag/paired.tcl --out /obs
+
+      - name: C3 read-only metadata of the stage-39 database (no network, archive and PDK read-only)
+        if: ${{ !cancelled() && steps.fetch.outcome == 'success' && steps.image.outcome == 'success' && steps.pdk.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/s41-c3"
+          docker run --rm --network none --platform linux/amd64 \
+            -v "$RUNNER_TEMP/s41/extract/runs:$RUNS_MOUNT:ro" \
+            -v "$GITHUB_WORKSPACE/src:$WORK_ROOT/src:ro" \
+            -v "$PDK_ROOT:$PDK_ROOT:ro" \
+            -v "$GITHUB_WORKSPACE/diagnostics/stage41:/diag:ro" \
+            -v "$RUNNER_TEMP/s41-c3:/obs" \
+            "$IMAGE" python3 /diag/measure_step.py --mode c3 \
+              --config "$STAGE41/config.json" --state-in "$STAGE41/state_in.json" \
+              --pdk-root "$PDK_ROOT/ciel/sky130/versions/$PDK_VERSION" --tcl /diag/c3.tcl --out /obs
+
+      - name: Summarize the paired calibration, C1 vs C2 and C3 (no causal claim)
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p diag-out/paired-summary
+          for d in s41-paired s41-c3; do
+            if [ -d "$RUNNER_TEMP/$d" ]; then cp -r "$RUNNER_TEMP/$d" "diag-out/$d"; fi
+          done
+          python3 diagnostics/stage41/summarize_paired.py --paired "$RUNNER_TEMP/s41-paired" \
+            --c3 "$RUNNER_TEMP/s41-c3" --c0 "$RUNNER_TEMP/s41-obs" \
+            --runs "$RUNNER_TEMP/s41/extract/runs" --fetch-report diag-out/fetch-report.json \
+            --out diag-out/paired-summary
 
       - name: Upload the diagnostic outputs
         if: always()

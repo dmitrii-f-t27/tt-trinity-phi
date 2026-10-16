@@ -11,7 +11,13 @@ their original absolute paths). Inputs are hashed before and after. Any mismatch
 --pdk-root is the archived PDK_ROOT value (the pinned PDK version directory); the loaded PDK_ROOT and DESIGN_DIR
 must come back unchanged, the effective SDC must be the pinned base.sdc (sha256), and the model files must lie in
 the pinned PDK version.
-Usage: python3 measure_step.py --config C --state-in S --pdk-root P --tcl T --out DIR
+Modes (sidecar 9b / 9c):
+  c0      --state-in is the stage-41 OUTPUT state (used as is); observe.tcl.
+  paired  --state-in is the archived stage-56 INPUT state; a derived state holding ONLY its "odb" (the final
+          database the official STA used) is written to OUT and loaded, so no SPEF is read automatically;
+          the 3 final SPEF paths of the parent state are passed explicitly; paired.tcl.
+  c3      --state-in is the stage-41 INPUT state; derived state with only its "odb" (stage 39); c3.tcl.
+Usage: python3 measure_step.py --mode M --config C --state-in S --pdk-root P --tcl T --out DIR
 """
 import argparse
 import hashlib
@@ -38,6 +44,11 @@ EXPECT = {
 EXPECT_PATHS = {"PDK_ROOT": c.PDK_VERSION_ROOT, "DESIGN_DIR": c.WORK_ROOT + "/src"}
 CORNERS = c.CORNERS
 EXCLUDED = ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*", "sky130_fd_sc_hd__dlymetal*"]
+RECORDS = {"c0": ["stage41-design-before.tsv", "stage41-design-after.tsv"],
+           "paired": ["paired-c1-before.tsv", "paired-c1-after.tsv", "paired-c2-after.tsv"],
+           "c3": ["c3-design.tsv"]}
+PARENT_STATE = {"paired": c.STATE56_IN, "c3": c.STATE41_IN}
+DRIVERS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "final_slew_drivers.json")
 
 
 def sha(path):
@@ -63,8 +74,9 @@ def main():
     ap = argparse.ArgumentParser()
     for a in ("--config", "--state-in", "--pdk-root", "--tcl", "--out"):
         ap.add_argument(a, required=True)
+    ap.add_argument("--mode", choices=sorted(RECORDS), default="c0")
     args = ap.parse_args()
-    prov = {"problems": [], "pdk_root_arg": args.pdk_root}
+    prov = {"problems": [], "pdk_root_arg": args.pdk_root, "mode": args.mode}
     if os.path.normpath(args.pdk_root) != c.PDK_VERSION_ROOT:
         prov["problems"].append("--pdk-root %r is not the pinned PDK version directory" % args.pdk_root)
 
@@ -90,6 +102,12 @@ def main():
         prov["problems"].append("LibreLane %s, expected 3.0.14" % __version__)
 
     tcl = os.path.abspath(args.tcl)
+    diag_dir = os.path.dirname(os.path.abspath(__file__))
+    with open(DRIVERS_FILE, encoding="utf-8") as f:
+        drivers = json.load(f)
+    extra_env = {"STAGE41_DIAG_DIR": diag_dir,
+                 "STAGE41_DRIVERS": " ".join(drivers["stage41_drivers" if args.mode == "c3"
+                                                    else "final_max_ss_drivers"])}
 
     class Stage41Observe(RepairDesignPostGRT):
         outputs = []
@@ -97,19 +115,50 @@ def main():
         def get_script_path(self):
             return tcl
 
-    inputs = {"config": args.config, "state_in": args.state_in, "tcl": tcl}
+        def prepare_env(self, env, state):
+            env = super().prepare_env(env, state)
+            env.update(extra_env)
+            return env
+
+    inputs = {"config": args.config, "state_in": args.state_in, "tcl": tcl,
+              "records_tcl": os.path.join(diag_dir, "records.tcl"), "drivers": DRIVERS_FILE}
     with open(args.state_in, encoding="utf-8") as f:
         state_json = json.load(f)
     inputs["odb"] = state_json.get("odb")
+    load_state = args.state_in
+    if args.mode != "c0":
+        want_parent = c.WORK_ROOT + "/" + PARENT_STATE[args.mode]
+        if os.path.normpath(args.state_in) != want_parent:
+            prov["problems"].append("--state-in %r is not the pinned parent state %s" % (args.state_in, want_parent))
+        elif sha(args.state_in) != c.PINNED_STATES[PARENT_STATE[args.mode]]:
+            prov["problems"].append("parent state sha256 differs from the pinned value")
+        load_state = os.path.join(args.out, "derived-state.json")
+        with open(load_state, "w", encoding="utf-8") as f:
+            json.dump({"odb": state_json.get("odb")}, f, indent=2, sort_keys=True)
+        prov["derived_state"] = {"parent": args.state_in, "kept": ["odb"],
+                                 "dropped": sorted(k for k in state_json if k != "odb")}
+        inputs["derived_state"] = load_state
+    if args.mode == "paired":
+        spef = state_json.get("spef") or {}
+        for rc in ("NOM", "MIN", "MAX"):
+            path = spef.get("%s_*" % rc.lower())
+            inputs["spef_" + rc.lower()] = path
+            extra_env["STAGE41_SPEF_" + rc] = path
     for name, path in inputs.items():
         if not path or not os.path.isfile(path):
             prov["problems"].append("input %s missing: %r" % (name, path))
     if prov["problems"]:
         return done()
     prov["hash_before"] = {k: sha(v) for k, v in inputs.items()}
+    for rc in ("NOM", "MIN", "MAX"):
+        if args.mode == "paired" and prov["hash_before"]["spef_" + rc.lower()] != c.SPEF_SHA256[rc]:
+            prov["problems"].append("%s SPEF sha256 differs from the pinned value" % rc)
+    prov["extra_env"] = extra_env
+    if prov["problems"]:
+        return done()
 
     try:
-        step = Stage41Observe.load(config=args.config, state_in=args.state_in, pdk_root=args.pdk_root)
+        step = Stage41Observe.load(config=args.config, state_in=load_state, pdk_root=args.pdk_root)
     except Exception as e:  # noqa: BLE001 - any load failure is a diagnostic failure
         prov["problems"].append("Step.load failed: %s: %s" % (type(e).__name__, e))
         return done()
@@ -162,7 +211,7 @@ def main():
         shutil.copy(log, os.path.join(args.out, "stage41-openroad.log"))
     else:
         prov["problems"].append("OpenROAD log missing")
-    for name in ("stage41-design-before.tsv", "stage41-design-after.tsv"):
+    for name in RECORDS[args.mode]:
         path = os.path.join(args.out, name)
         prov.setdefault("design_records", {})[name] = sha(path) if os.path.isfile(path) else None
         if prov["design_records"][name] is None:

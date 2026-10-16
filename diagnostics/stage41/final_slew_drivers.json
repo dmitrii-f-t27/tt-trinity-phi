@@ -1,0 +1,14 @@
+{
+  "source": "archived f6f4db6 run 38855207187, GDS_logs artifact 12026633781: runs/wokwi/56-openroad-stapostpnr/max_ss_100C_1v60/checks.rpt (sha256 1e8099f23a22b0c133d0c8d9243b5e9966b3a34eaf5b7185466c276cfaca4d1f), the 30 output pins among its max-slew violators",
+  "final_max_ss_drivers": [
+    "fanout66/X", "fanout35/X", "fanout65/X", "fanout52/X", "fanout53/X", "fanout64/X", "fanout79/X",
+    "fanout32/X", "input2/X", "input1/X", "fanout92/X", "fanout18/X", "fanout21/X", "fanout91/X",
+    "fanout44/X", "fanout39/X", "fanout93/X", "fanout37/X", "fanout33/X", "fanout108/X", "fanout20/X",
+    "fanout24/X", "fanout84/X", "fanout22/X", "input5/X", "fanout34/X", "input8/X", "fanout82/X",
+    "fanout94/X", "fanout83/X"
+  ],
+  "stage41_drivers": [
+    "fanout18/X", "fanout20/X", "fanout35/X", "fanout52/X", "fanout53/X", "fanout64/X", "fanout65/X",
+    "fanout66/X"
+  ]
+}

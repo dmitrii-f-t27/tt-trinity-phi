@@ -3,35 +3,10 @@
 # Same set-up as the pinned repair_design_postgrt.tcl up to the parasitics, then ONLY reports:
 # no repair_design, no resize, no placement, no write_views / write_db. The archived ODB is mounted read-only.
 source $::env(SCRIPTS_DIR)/openroad/common/io.tcl
-
-# Deterministic records of the logical design and placement, read from OpenDB:
-#   N <inst> <master> <x> <y> <orient> <placement status>
-#   I <net> <inst> <mterm> <io type> <master>
-#   B <net> <bterm> <io type>
-# Fields are tab-separated; names are written as OpenDB returns them.
-proc stage41_dump {path} {
-    # same access path as the pinned io.tcl set_global_vars
-    set block [[[::ord::get_db] getChip] getBlock]
-    set fh [open $path w]
-    foreach inst [$block getInsts] {
-        set loc [$inst getLocation]
-        puts $fh [join [list N [$inst getName] [[$inst getMaster] getName] [lindex $loc 0] [lindex $loc 1] \
-            [$inst getOrient] [$inst getPlacementStatus]] "\t"]
-    }
-    foreach net [$block getNets] {
-        set nname [$net getName]
-        foreach it [$net getITerms] {
-            set inst [$it getInst]
-            set mterm [$it getMTerm]
-            puts $fh [join [list I $nname [$inst getName] [$mterm getName] [$mterm getIoType] \
-                [[$inst getMaster] getName]] "\t"]
-        }
-        foreach bt [$net getBTerms] {
-            puts $fh [join [list B $nname [$bt getName] [$bt getIoType]] "\t"]
-        }
-    }
-    close $fh
-}
+# stage41_dump (same record format as before) lives in the shared helper file
+source $::env(STAGE41_DIAG_DIR)/records.tcl
+# same report precision as the pinned sta/corner.tcl
+set sta_report_default_digits 6
 
 read_current_odb
 set_propagated_clock [all_clocks]
