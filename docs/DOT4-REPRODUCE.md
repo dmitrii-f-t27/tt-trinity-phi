@@ -250,11 +250,18 @@ whether the area changes is decided only by the official measurement (no generic
 
 ## 9h. Official ABC area knobs (CI, after SYNTH9)
 `gds.yaml` runs `python3 test/synth_area_tune.py` (`if: always()`, artifact `AREA_TUNE`) before the long physical-model
-simulation: twelve sequential synthesis-only runs of the official LibreLane 3.0.14 (`--docker-no-tty` before
+simulation: by default six sequential synthesis-only runs of the official LibreLane 3.0.14 (`--docker-no-tty` before
 `--dockerized`, `--flow Classic --to Yosys.Synthesis`) on the same `src/config_merged.json`, sources, PDK, exclusion union
 and 20 ns clock, changing only `SYNTH_STRATEGY` (AREA 0 / AREA 1 / AREA 2; AREA 1 is the best strategy of the last full
-official SYNTH9 table), `SYNTH_ABC_USE_MFS3` (adds `mfs3 -aemvz -I 4 -O 2`) and
-`SYNTH_ABC_AREA_USE_NF` (area mapper `&nf -R 1000` instead of `amap`); no linter flag, exclusion, clock or design change.
+official SYNTH9 table) and `SYNTH_ABC_AREA_USE_NF` (area mapper `&nf -R 1000` instead of `amap`) with
+`SYNTH_ABC_USE_MFS3` False; no linter flag, exclusion, clock or design change. The optional switch `--include-mfs3` adds the
+six `SYNTH_ABC_USE_MFS3` True rows (`mfs3 -aemvz -I 4 -O 2`, twelve in total). It is NOT run in CI: at the official 22c run (GDS
+workflow 38845905126) the twelve-row matrix was a FAIL, not a PASS, because every MFS3=True row aborted in the upstream
+ABC (`yosys-abc ... utilTruth.h: Abc_TtExpand: Assertion pCut[i] == pCut0[k] failed`, yosys-abc exit 134, LibreLane exit 2;
+the six MFS3=False rows were valid). That is a recorded property of this tool on this netlist and configuration, not a
+general "unsupported flag"; the abort is not masked or bypassed and the tool is not replaced, and the option exists to
+reproduce it (still FAIL). If the official run itself used MFS3=True the default mode refuses honestly and asks for
+`--include-mfs3`; it never changes the boolean by itself.
 The strategy and both knob values of the CURRENT official run (`runs/wokwi`) must be one of these three strategies and real
 booleans; the matching row must reproduce the official cell count, area and per-type counts, and every row is checked
 against the official provenance (exclusion files, raw filtered library, PDK, versions, Yosys creator) and against its own
@@ -264,7 +271,7 @@ unsupported option or a missing metric is an explicit failed row with null numbe
 provenance mismatch fails the step. The tool exit code is part of every row: after each run the script writes its own small
 record `PHI_TOOL_EXIT.json` (rc, command, `GITHUB_SHA` when set) into that run's directory, after the tool finished, and a
 row is valid only if that record exists with rc 0; a failed row keeps any partly written numbers only under
-`raw_measurements`, its public area/cell fields are null, and it can never be the minimum row. The summary lists the twelve
+`raw_measurements`, its public area/cell fields are null, and it can never be the minimum row. The summary lists the selected
 rows and the minimum VALID row, a candidate for the full GDS, not a winner; this is an area-only diagnosis, not timing and
 not a fit proof. `--no-run --runs-root <dir> --baseline-run <dir> [--path-map OLD=NEW]` validates copies and also requires
 the exit record (a missing record is a failure, never a pass); a non-empty run directory still blocks a run.

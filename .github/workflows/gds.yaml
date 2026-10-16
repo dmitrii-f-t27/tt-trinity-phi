@@ -67,9 +67,11 @@ jobs:
             runs/synth-explore/
           if-no-files-found: error
 
-      # Area-only measurement, NOT timing and NOT a fit proof. Twelve sequential synthesis-only runs of the
+      # Area-only measurement, NOT timing and NOT a fit proof. Six (default) sequential synthesis-only runs of the
       # official LibreLane 3.0.14 (Classic flow stopped after Yosys.Synthesis) on the same config, sources, PDK and
-      # exclusions; only SYNTH_STRATEGY (AREA 0/1/2), SYNTH_ABC_USE_MFS3 and SYNTH_ABC_AREA_USE_NF change. The row
+      # exclusions; only SYNTH_STRATEGY (AREA 0/1/2) and SYNTH_ABC_AREA_USE_NF change here (MFS3 stays False). The
+      # optional 12-row matrix (--include-mfs3) is NOT run in CI: its six MFS3=True rows aborted in the upstream ABC
+      # (Abc_TtExpand assertion, rc 134) at the 22c run, a recorded FAIL; the script can reproduce it on demand. The row
       # that matches the current official run must reproduce it; every row is checked against the official
       # provenance. A tool error, an unsupported option, an incomplete table or a mismatch fails this step; a red
       # Build GDS stays red whatever this step does. It runs before the long simulation so the numbers arrive early.

@@ -2,12 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """Area-only measurement of the supported official ABC area knobs (diagnosis only; NOT timing, NOT a fit proof).
 
-Twelve sequential synthesis-only runs of the official LibreLane 3.0.14 (docker, `--flow Classic --to
+Sequential synthesis-only runs of the official LibreLane 3.0.14 (docker, `--flow Classic --to
 Yosys.Synthesis`, `--docker-no-tty` BEFORE `--dockerized`) on the SAME src/config_merged.json, the same sources,
-PDK, cell-exclusion union and 20 ns clock. Only three supported configuration variables change:
-    SYNTH_STRATEGY       AREA 0 | AREA 1 | AREA 2 (the verified official AREA 1 is the best strategy of the last
-                         full SYNTH9 table, so it is part of the matrix: 3 strategies x 2 x 2 = 12 rows)
-    SYNTH_ABC_USE_MFS3   False | True     (adds the `mfs3 -aemvz -I 4 -O 2` area resynthesis step)
+PDK, cell-exclusion union and 20 ns clock. DEFAULT mode: the 6 supported measurements (AREA 0/1/2 x AREA_USE_NF
+False/True, MFS3 False). `--include-mfs3` adds the 6 MFS3=True rows (12 in total). Only three supported
+configuration variables change:
+    SYNTH_STRATEGY       AREA 0 | AREA 1 | AREA 2 (AREA 1 is the best strategy of the last full SYNTH9 table)
+    SYNTH_ABC_USE_MFS3   False | True     (adds the `mfs3 -aemvz -I 4 -O 2` area resynthesis step; True ONLY with
+                         --include-mfs3: at the official 22c run all six MFS3=True rows aborted in the upstream ABC,
+                         `Abc_TtExpand ... Assertion pCut[i] == pCut0[k] failed`, yosys-abc rc 134 / LibreLane rc 2 -
+                         that FAIL is recorded history, never rewritten as PASS, and not "flag unsupported in
+                         general"; the abort is not masked or bypassed, the tool is not replaced)
     SYNTH_ABC_AREA_USE_NF False | True    (area mapper `&get -n; &nf -R 1000; &put` instead of `amap`)
 (source: construct_abc_script-3.0.14.py). Nothing else is overridden: no linter flag, no exclusion list, no
 clock, no format, no design change. Temporary configs are written next to src/config_merged.json (so `dir::`
@@ -15,7 +20,8 @@ paths resolve as in the official run), copied into the artifact, and only those 
 The run directories are the script's own empty ones under runs/area-tune; runs/wokwi is only read.
 
 Dynamic calibration: the strategy and both knob values of the CURRENT official run (runs/wokwi config) must be
-one of the three strategies and two real booleans, exactly one of the twelve rows matches them, and that row must
+one of the three strategies and two real booleans, exactly one of the SELECTED rows matches them (if the official run
+uses MFS3=True and `--include-mfs3` is absent the script refuses honestly; it never flips the boolean), and that row must
 reproduce the official cell count, area and per-type cell counts. Every row is also checked against the official
 run's provenance (exclusion files, raw filtered library sha256, PDK, versions, Yosys creator) with the same
 helpers as test/official_block_profile.py (fingerprint, compare_fp, read_probe: known library cells with finite
@@ -30,12 +36,12 @@ with the real rc (null when the tool could not start); a row is VALID only if th
 partly written stat of a failed run can never become a VALID or minimum row (it is kept only under
 `raw_measurements`, the public area/cell fields are null). `--no-run` requires the same record: a missing one is a
 failure (rc unknown), never a pass. A non-empty run directory still blocks the run (nothing is erased or overwritten).
-The summary lists the twelve rows and the minimum VALID row; that row is a candidate to measure with the full GDS,
+The summary lists the selected rows and the minimum VALID row; that row is a candidate to measure with the full GDS,
 not a winner and not a fit/timing claim.
 
 Usage (repo root, after the official Build GDS step):
   python3 test/synth_area_tune.py --out area-tune-out
-  python3 test/synth_area_tune.py --no-run --runs-root <dir with the 12 run dirs> --baseline-run <runs/wokwi copy> \
+  python3 test/synth_area_tune.py --no-run --runs-root <dir with the run dirs> [--include-mfs3] --baseline-run <runs/wokwi copy> \
       [--path-map OLD=NEW] --out <dir>
 """
 import argparse
@@ -55,7 +61,11 @@ import synth_explore as se  # noqa: E402
 
 DESIGN = "tt_um_trinity_nano"
 STRATEGIES = ("AREA 0", "AREA 1", "AREA 2")
-ROWS = [(s, m, n) for s in STRATEGIES for m in (False, True) for n in (False, True)]
+# Default matrix: the 6 supported measurements (MFS3 False). The 6 MFS3=True rows are only run with --include-mfs3:
+# at the official 22c run every one of them ended in the upstream ABC assertion (yosys-abc rc 134, "Abc_TtExpand ...
+# Assertion pCut[i] == pCut0[k] failed", LibreLane rc 2), so they are kept as a reproducible, expected-FAIL experiment.
+ROWS_SUPPORTED = [(s, False, n) for s in STRATEGIES for n in (False, True)]
+ROWS_MFS3 = [(s, True, n) for s in STRATEGIES for n in (False, True)]
 EXIT_FILE = "PHI_TOOL_EXIT.json"
 RAW_KEYS = ("cells_total", "cells_lib", "area", "sequential_area", "state_count", "state_area", "cells_by_type")
 
@@ -130,7 +140,7 @@ def fmt(v, nd=3):
     return "null" if v is None else ("%.*f" % (nd, v))
 
 
-def write_reports(out, rows, problems, meta):
+def write_reports(out, rows, rows_list, problems, meta):
     status = "FAIL" if problems else "PASS"
     valid = [r for r in rows.values() if r["status"] == "valid"]
     best = [r["name"] for r in valid if r["area"] == min(v["area"] for v in valid)] if valid else []
@@ -140,7 +150,7 @@ def write_reports(out, rows, problems, meta):
              "| row | strategy | MFS3 | AREA_USE_NF | status | library cells | area um2 | vs official baseline | note |",
              "|---|---|---|---|---|---:|---:|---:|---|"]
     base = meta.get("baseline")
-    for (s, m, n) in ROWS:
+    for (s, m, n) in rows_list:
         r = rows[row_name(s, m, n)]
         delta = None if (r["area"] is None or not base) else r["area"] - base["area"]
         lines.append("| %s | %s | %s | %s | %s | %s | %s | %s | %s |" % (
@@ -152,6 +162,11 @@ def write_reports(out, rows, problems, meta):
         else "Official baseline unavailable (see problems).",
         "Minimum VALID row(s): %s. This is a candidate for the full GDS, not a winner; timing and 1-tile fit are decided by the "
         "main GDS and the later gate-level and precheck jobs on the latest SHA only." % (", ".join(best) or "none")]
+    if not meta.get("include_mfs3"):
+        lines += ["", "MFS3=True rows were NOT run (default mode: %d supported rows). At the official 22c run all six ended in the "
+                  "upstream ABC assertion `Abc_TtExpand ... pCut[i] == pCut0[k]` (yosys-abc rc 134, LibreLane rc 2): a recorded "
+                  "FAIL, not a PASS and not an unsupported flag in general; `--include-mfs3` reproduces it and is expected to fail "
+                  "on that tool." % len(rows_list)]
     if problems:
         lines += ["", "Problems:"] + ["- " + p for p in problems]
     with open(os.path.join(out, "AREA_TUNE.md"), "w", encoding="utf-8") as f:
@@ -177,7 +192,10 @@ def main():
     ap.add_argument("--baseline-run", default=se.OFFICIAL_RUN_DIR)
     ap.add_argument("--path-map", action="append", default=[], metavar="OLD=NEW")
     ap.add_argument("--no-run", action="store_true", help="validate existing run directories only")
+    ap.add_argument("--include-mfs3", action="store_true",
+                    help="also run the 6 MFS3=True rows (expected to abort in the upstream ABC on this tool; still FAIL)")
     args = ap.parse_args()
+    rows_list = list(ROWS_SUPPORTED) + (list(ROWS_MFS3) if args.include_mfs3 else [])
 
     os.makedirs(args.out, exist_ok=True)
     problems, created = [], []
@@ -187,10 +205,11 @@ def main():
             problems.append("--path-map %r must be OLD=NEW" % item)
         else:
             path_map.append(tuple(item.split("=", 1)))
-    rows = {row_name(*r): blank(row_name(*r), *r, "not measured") for r in ROWS}
+    rows = {row_name(*r): blank(row_name(*r), *r, "not measured") for r in rows_list}
     meta = {"config": args.config, "runs_root": args.runs_root, "pdk": args.pdk, "baseline_run": args.baseline_run,
             "baseline": None, "baseline_key": None, "calibration_row": None, "commands": {}, "exit_codes": {},
-            "no_run": args.no_run, "path_map": [list(p) for p in path_map]}
+            "no_run": args.no_run, "path_map": [list(p) for p in path_map], "include_mfs3": args.include_mfs3,
+            "rows": [row_name(*r) for r in rows_list]}
     refused = blocked = False
     try:
         runs_abs, official_abs = os.path.abspath(args.runs_root), os.path.abspath(se.OFFICIAL_RUN_DIR)
@@ -209,6 +228,11 @@ def main():
             key = flags[:3]
             meta["baseline_key"] = list(key)
             meta["calibration_row"] = row_name(*key)
+            if key not in rows_list:
+                # never switch the boolean automatically to make the calibration possible: refuse honestly
+                problems.append("the official run uses SYNTH_ABC_USE_MFS3=%s, which is not in the selected rows; rerun with "
+                                "--include-mfs3 (the knob is never changed automatically)" % key[1])
+                key = None
         if not blocked and not args.no_run:
             if baseline is None or key is None:
                 blocked = True
@@ -223,7 +247,7 @@ def main():
             except importlib.metadata.PackageNotFoundError:
                 problems.append("python package librelane is not installed for %s" % sys.executable)
                 blocked = True
-            for (s, m, n) in ROWS:
+            for (s, m, n) in rows_list:
                 rd = os.path.join(args.runs_root, row_name(s, m, n))
                 if os.path.exists(rd) and (not os.path.isdir(rd) or os.listdir(rd)):
                     problems.append("run directory %s exists and is not an empty directory" % rd)
@@ -236,7 +260,7 @@ def main():
             if not blocked:
                 cfg_dir = os.path.dirname(os.path.abspath(args.config))
                 os.makedirs(os.path.join(args.out, "configs"), exist_ok=True)
-                for (s, m, n) in ROWS:
+                for (s, m, n) in rows_list:
                     name = row_name(s, m, n)
                     cfg = dict(base_cfg, SYNTH_STRATEGY=s, SYNTH_ABC_USE_MFS3=m, SYNTH_ABC_AREA_USE_NF=n)
                     with tempfile.NamedTemporaryFile("w", dir=cfg_dir, prefix="phi_tune_", suffix=".json", delete=False,
@@ -271,7 +295,7 @@ def main():
             off_fp, _, off_problems = obp.fingerprint(args.baseline_run, path_map)
             meta["provenance_official"] = off_fp
             problems += ["official provenance: " + p for p in off_problems]
-            for (s, m, n) in ROWS:
+            for (s, m, n) in rows_list:
                 name = row_name(s, m, n)
                 rd = os.path.join(args.runs_root, name)
                 fp, table, fpp = obp.fingerprint(rd, path_map)
@@ -322,7 +346,7 @@ def main():
                 os.remove(path)
             except OSError:
                 pass
-    write_reports(args.out, rows, problems, meta)
+    write_reports(args.out, rows, rows_list, problems, meta)
     print("AREA_TUNE %s" % ("FAIL" if problems else "PASS"))
     for p in problems:
         print("  - " + p)
