@@ -179,6 +179,33 @@ It is a PDK-model simulation, not a layout/LVS proof; the gate-level pin test re
 9a is generic and does not predict the cell branch. No area, timing or fit is claimed before the official GDS: read
 the `fa_1` count in `06-yosys-synthesis/reports/stat.json` and the new area/cells there.
 
+## 9d. Official block area profile (CI, after Build GDS)
+The host profile of 9a is not the official recipe, so `gds.yaml` also runs `python3 test/official_block_profile.py`
+(`if: always()`, artifact `BLOCK_PROFILE`): four synthesis-only runs of the official LibreLane 3.0.14
+(`--docker-no-tty` before `--dockerized`, `--flow Classic --to Yosys.Synthesis`, so nothing reaches SDC/STA), same
+image, PDK and exclusion union. The provenance of the official run and of every probe is read from that run's single
+synthesis step: `extra.json` `libs_synth` (the filtered libraries the mapper really read; each must exist on the host,
+be non-empty and unique, with its sha256 and exact (cell name, area) table, every area finite and positive; the tables
+must be identical to the official run, and so must the raw sha256 of the filtered library: its timing functions steer
+the mapper too; a mismatch is a failure) and `blackbox_models`, the configured SYNTH/PNR exclusion files (sha256, line
+count), `EXTRA_EXCLUDED_CELLS`, PDK `sky130A` with the pinned PDK version, `STD_CELL_LIBRARY`, the librelane version,
+the real Yosys version from `stat.json` and the docker image id. Missing or unavailable provenance is a failure, never
+"equal because both are missing"; on artifacts downloaded to another host the recorded paths do not exist, so
+`--no-run` fails explicitly unless the paths are mapped with `--path-map OLD=NEW`. Every library cell type of a probe
+must be in its own table with a finite positive area (no name accepted by prefix), counts must be positive integers
+and the weighted sum must equal the stat and state area (0.01 um2). `full` is the unchanged `src/config_merged.json` and must reproduce the strategy,
+cell count, area and per-type cell counts of the current `runs/wokwi` (read only, never hard-coded); `mul`
+(`gf16_v2_mul` + `gf16_sig_mul10`) and `add` (`gf16_v2_add`) change only `DESIGN_NAME` and `VERILOG_FILES`;
+`storage` is the real top with temporary black boxes for the two arithmetic modules (real port lists parsed from the
+sources, the arithmetic files left out). Temporary configs and the black-box file are written next to
+`src/config_merged.json` so the `dir::` paths resolve as in the official run, are copied into the artifact and only
+the files created by the run are removed; no exclusion list, strategy, density or define is overridden. The area of
+the two black boxes is reported as EXCLUDED (not zero, not unknown); exactly those two are allowed, any other cell of
+unknown area fails the probe. The probes optimise across different boundaries: their areas are not additive and are
+not a physical partition. Any missing, non-finite or non-positive value, calibration mismatch, exclusion/library
+mismatch with the official run or tool error makes the step exit non-zero; the artifact is always uploaded and a red
+Build GDS is never masked. `--no-run --runs-root <dir> --baseline-run <dir>` validates copies. A diagnosis, not a fit proof.
+
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
 non-empty `datasheet.pdf`, runs `pdfinfo` and `pdftoppm -r 110 -png` for every page, requires one non-empty

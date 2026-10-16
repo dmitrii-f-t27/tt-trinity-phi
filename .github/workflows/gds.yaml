@@ -87,6 +87,27 @@ jobs:
           path: physical-fa-check/
           if-no-files-found: error
 
+      # Measurement only, NOT a fit proof. Four synthesis-only runs of the official LibreLane 3.0.14 (same
+      # image, PDK and cell exclusions; Classic flow stopped after Yosys.Synthesis, so no SDC/STA): the full
+      # design (calibration against runs/wokwi of this SHA, read only), gf16_v2_mul, gf16_v2_add, and the
+      # storage/control top with temporary black boxes for those two (their area is reported as excluded, never
+      # as zero). Probe areas are not additive. test/official_block_profile.py fails (non-zero) on a missing or
+      # unknown area, a calibration mismatch or a tool error; a red Build GDS stays red whatever this step does.
+      - name: Official block area profile (measurement)
+        if: always()
+        timeout-minutes: 60
+        run: python3 test/official_block_profile.py --out block-profile-out
+
+      - name: Upload the block area profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLOCK_PROFILE
+          path: |
+            block-profile-out/
+            runs/block-profile/
+          if-no-files-found: error
+
   precheck:
     needs: gds
     runs-on: ubuntu-24.04
