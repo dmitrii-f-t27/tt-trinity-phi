@@ -18,10 +18,13 @@ multiplier and one shared adder, 8 clocks per dot product; `uio` is input only. 
 > fanout of 16 (> 10). `9eb7373` excluded the two `clkdlybuf4s25/50_1` cells and added strict checker corners and
 > CTS 20 / 50 um: clock-root fanout 0 in all 9 corners and DRC/LVS/antenna 0, but the repair then used other delay
 > cells (`dlygate4sd3_1` drove all 8 violating nets in `max_ss`; `dlymetal6s4s_1` sits on the worst setup path),
-> and 105 max-slew plus 15 setup violations (worst -2.34 ns) remained. Current candidate: the three HD
-> delay-cell families `sky130_fd_sc_hd__clkdlybuf*`, `dlygate*` and `dlymetal*` excluded from mapping (a stricter
-> restriction; official filters and the 0.75 ns / 10 limits unchanged). Unvalidated: area, hold, setup and slew
-> are decided only by the `physical-signoff` job of a run.
+> and 105 max-slew plus 15 setup violations (worst -2.34 ns) remained. `054134d` excluded the three HD
+> delay-cell families `sky130_fd_sc_hd__clkdlybuf*`, `dlygate*` and `dlymetal*` (none left in the netlist): setup
+> and hold violations 0 in all 9 corners (worst setup slack +3.35 ns), fanout 0, DRC/LVS/antenna 0, but 289
+> max-slew violations (worst `ss`) and 1 max-cap violation remain, so the strict flow failed. Current candidate:
+> the same recipe plus stricter repair targets `DESIGN_REPAIR_MAX_SLEW_PCT` 70 and `DESIGN_REPAIR_MAX_CAP_PCT` 50
+> (official defaults 20 / 20); the 0.75 ns, fanout 10 and library cap limits are unchanged. Unvalidated: area,
+> hold, setup and slew are decided only by the `physical-signoff` job of a run.
 
 ## Status (read this first)
 

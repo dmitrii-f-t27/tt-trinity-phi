@@ -295,10 +295,15 @@ fixtures (`python3 test/test_physical_signoff_audit.py`) only show that the audi
 History: `9eb7373` excluded only `clkdlybuf4s25_1` / `clkdlybuf4s50_1` (with strict checker corners and CTS distance
 between buffers 20 um, clock max wire length 50 um): clock-root fanout 0 in all 9 corners, DRC/LVS/antenna 0, but the
 strict flow FAILED with 105 max-slew violations (all 8 violating drivers in `max_ss` were `dlygate4sd3_1`) and 15 setup
-violations (worst -2.34 ns, `dlymetal6s4s_1` on the worst path). Current candidate in `src/config.json`: the three HD
-delay-cell families excluded through `EXTRA_EXCLUDED_CELLS` = `sky130_fd_sc_hd__clkdlybuf*`, `sky130_fd_sc_hd__dlygate*`,
-`sky130_fd_sc_hd__dlymetal*` (LibreLane applies these wildcards to synthesis and to the PnR dont-use list), everything
-else as `9eb7373`. A stricter restriction, not a relaxation; unvalidated, with area, hold and setup risk.
+violations (worst -2.34 ns, `dlymetal6s4s_1` on the worst path). `054134d` excluded the three HD delay-cell families
+through `EXTRA_EXCLUDED_CELLS` = `sky130_fd_sc_hd__clkdlybuf*`, `sky130_fd_sc_hd__dlygate*`, `sky130_fd_sc_hd__dlymetal*`
+(LibreLane applies these wildcards to synthesis and to the PnR dont-use list), everything else as `9eb7373`: no cell
+of those families in the final netlist, setup/hold violations 0 in all 9 corners (worst setup +3.35 ns in `max_ss`,
+worst hold +0.106 ns in `min_ff`), fanout 0, DRC/LVS/antenna 0, utilization 0.587; strict flow still FAILED with 289
+max-slew violations (worst `ss`) and 1 max-cap violation (`max_ss`). Current candidate: the `054134d` recipe plus the
+repair margins `DESIGN_REPAIR_MAX_SLEW_PCT` 70 and `DESIGN_REPAIR_MAX_CAP_PCT` 50 (official defaults 20 / 20; passed
+as `repair_design -slew_margin` / `-cap_margin`): stricter repair targets, the limits are not raised. Unvalidated,
+with area, hold and setup risk.
 
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a

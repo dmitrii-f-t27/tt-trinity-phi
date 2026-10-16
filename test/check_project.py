@@ -13,8 +13,8 @@ Physical profile, chosen by the environment variable PHI_PROFILE (exact values o
   unset / "default"  1x1, clock_hz 50000000, CLOCK_PERIOD 20 (the original #100 envelope)
   "eval-1x2"         isolated evaluation: 1x2, clock_hz 25000000, CLOCK_PERIOD 40, density 65,
                      AREA 1, MFS3 False, AREA_USE_NF False, the three excluded HD delay-cell
-                     families, strict timing/slew/cap checker corners ["*"], CTS 20 / 50 um, no
-                     DESIGN_REPAIR_MAX_SLEW_PCT override; the constants of
+                     families, strict timing/slew/cap checker corners ["*"], CTS 20 / 50 um, repair
+                     margins slew 70 % / cap 50 %; the constants of
                      specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27 must agree with info.yaml and
                      src/config.json, its latency must equal LATENCY_CLOCKS = 8 of the numeric spec, and
                      the numeric spec must be byte-identical to NUMERIC_SPEC_SHA256.
@@ -58,9 +58,10 @@ PROFILES = {
                                             "sky130_fd_sc_hd__dlymetal*"],
                    "TIMING_VIOLATION_CORNERS": ["*"], "MAX_SLEW_VIOLATION_CORNERS": ["*"],
                    "MAX_CAP_VIOLATION_CORNERS": ["*"],
-                   "CTS_DISTANCE_BETWEEN_BUFFERS": 20, "CTS_CLK_MAX_WIRE_LENGTH": 50},
-        # keys this profile requires to be ABSENT (official defaults apply)
-        "absent": ["DESIGN_REPAIR_MAX_SLEW_PCT"],
+                   "CTS_DISTANCE_BETWEEN_BUFFERS": 20, "CTS_CLK_MAX_WIRE_LENGTH": 50,
+                   # stricter repair TARGETS (official defaults 20 / 20 %); the constraints themselves
+                   # (0.75 ns, fanout 10, library max cap) are not raised
+                   "DESIGN_REPAIR_MAX_SLEW_PCT": 70, "DESIGN_REPAIR_MAX_CAP_PCT": 50},
     },
 }
 
