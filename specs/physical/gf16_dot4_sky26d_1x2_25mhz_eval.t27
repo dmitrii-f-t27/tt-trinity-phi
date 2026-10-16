@@ -491,3 +491,50 @@ invariant eval_eight_clocks
 // these exact settings; anything else is FAIL and is reported as measured. No new
 // margin sweep or second lever is added in the same run; a 1x2 result is not
 // acceptance of issue #100; nothing is allocated, purchased or submitted.
+//
+// ----------------------------------------------------------------------------
+// 9f. Result of 9e and the next candidate: NOR2 drive floor
+// ----------------------------------------------------------------------------
+// Policy written BEFORE implementation; a hypothesis correction, not a claimed fix.
+// 9e result (implementation edf0613ad5b561cbb5472aa0adde7ad122f1446b, GDS workflow
+// 38894723603, PHYSICAL_RUN artifact 12042954630): Build GDS FAILED and the strict
+// audit FAILED with exactly one problem: 10 max-slew pins in max_ss_100C_1v60; 0 in
+// the other 8 corners; cap, fanout, setup and hold 0 in all 9; DRC, LVS and antenna
+// 0; utilization 0.589342; minimum setup slack +5.732776 ns, minimum hold slack
+// +0.1047776 ns. The 6 exclusions are absent from the final netlist and the CTS
+// list [clkbuf_8, clkbuf_4] with root clkbuf_16 was applied. 293 -> 10 is a
+// measured improvement, but 9e is a FAIL and is not waived; precheck and gate-level
+// tests did not pass under it.
+// Remaining violation, mapped in the final netlist (sha256
+// 305bfe8485be1f332ab41fc62f61068f737eb7dccebe654b0ae47304ab82fcf5), not guessed:
+// the 10 pins are one net _0364_, driven by _1809_/Y (sky130_fd_sc_hd__nor2_2, inputs
+// \step[0] and _0679_), and its 9 sinks (8 A2 pins, 1 A pin); slew 0.767959 to
+// 0.768037 ns against 0.75. No stronger NOR2 master is in the final netlist. It is a
+// control net derived from the step counter; the RTL is not changed for it.
+// Library facts: the filtered synthesis liberty of the pinned run (two identical
+// members of the archived SYNTH_EXPLORE f6f4db6 artifact, sha256
+// 27d24d87f182dd2ccf026d08ec0fc573ad31a2a0a8a4d1b1f4e342be1666b41c) contains
+// sky130_fd_sc_hd__nor2_2, nor2_4 and nor2_8; the PDK no_synth list (8afc8346)
+// removes nor2_1 from synthesis only. The place-and-route exclusion is
+// EXTRA_EXCLUDED_CELLS united with the PDK drc_exclude list (cached LibreLane 3.0.14
+// openroad.py line 333), and drc_exclude does not contain nor2_1, so the resizer may
+// still use nor2_1.
+// Candidate (one change, nothing else): EXTRA_EXCLUDED_CELLS = the 6 entries of 9e
+// plus exactly sky130_fd_sc_hd__nor2_1 and sky130_fd_sc_hd__nor2_2 (8 entries; exact
+// names, no wildcard; the NOR2B cells such as nor2b_1 are NOT excluded). This sets a
+// NOR2 drive floor of nor2_4 in synthesis and in repair. Everything of 9e stays: the
+// CTS list and root, repair margins 20 / 20 and 10 / 10, RUN_GRT true, 40 ns, all 9
+// strict corners, 0.75 ns, fanout 10, library cap, every checker, the official
+// filters and tools. Unchanged: exactly 8 enabled clocks, GF16 S1 E6 M9 bias 31,
+// independent A/B, the interface, the RTL, the numeric spec and its declarations.
+// Not promised: that synthesis maps this function to nor2_4 rather than another
+// structure, that the net closes, or the area, hold and new-violation outcome; all
+// UNKNOWN until the CI run.
+// Strict validation (a check, not a waiver): the auditor's excluded set becomes these
+// exact 8 entries in the PnR and synthesis configs and in the final netlist; negative
+// fixtures show that nor2_1 and nor2_2 are caught; positive fixtures show that
+// nor2_4, nor2_8 and nor2b_1 are not; the eval check requires the exact 8-entry list
+// and the 9e CTS keys. PASS only as in 9e (official GDS, strict 9-corner sign-off at
+// zero, precheck, gate-level, RTL, native, Docs); anything else is FAIL. No second
+// lever in the same run; a 1x2 result is not acceptance of issue #100; nothing is
+// allocated, purchased or submitted.
