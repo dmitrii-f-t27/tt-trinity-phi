@@ -23,6 +23,12 @@ pub const SIGNOFF_ALLOWED_VIOLATIONS : u32 = 0;
 """
 
 
+# stronger buffers that the section-9e drive floor must NOT catch (buf_12 / clkbuf_16 share a prefix with
+# the excluded exact names)
+ALLOWED_NETLIST = ("sky130_fd_sc_hd__buf_2 u1 (.A(a), .X(x));\nsky130_fd_sc_hd__clkbuf_4 u2 (.A(a), .X(y));\n"
+                   "sky130_fd_sc_hd__buf_12 u3 (.A(a), .X(z));\nsky130_fd_sc_hd__clkbuf_16 u4 (.A(a), .X(w));\n")
+
+
 def write(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -63,7 +69,12 @@ class Fixture:
                       "route__antenna_violation__count": 0, "design__instance__utilization": 0.6,
                       "design__critical_disconnected_pin__count": 0}
         self.save_final()
-        write(os.path.join(self.run, "final", "nl", "top.nl.v"), "sky130_fd_sc_hd__buf_2 u1 (.A(a), .X(x));\n")
+        self.cts = os.path.join(self.run, "35-openroad-cts")
+        self.save_cts(dict(psa.EXPECT_CTS))
+        write(os.path.join(self.run, "final", "nl", "top.nl.v"), ALLOWED_NETLIST)
+
+    def save_cts(self, cfg):
+        write(os.path.join(self.cts, "config.json"), dict(cfg, meta={"step": "OpenROAD.CTS"}))
 
     def save_state(self):
         write(os.path.join(self.sta, "state_out.json"), {"metrics": self.metrics})
@@ -95,7 +106,8 @@ class AuditTests(unittest.TestCase):
         # parser check on made-up numbers only, not physical evidence
         rep = self.fx.audit()
         self.assertEqual(rep["verdict"], "PASS", rep["problems"])
-        self.assertEqual(rep["excluded_cell_hits"], {})   # buf_2 matches none of the delay-family patterns
+        # buf_2, clkbuf_4, buf_12 and clkbuf_16 match none of the 6 exclusion entries
+        self.assertEqual(rep["excluded_cell_hits"], {})
 
     def test_absent_corner_fails(self):
         c = psa.CORNERS[7]
@@ -190,6 +202,36 @@ class AuditTests(unittest.TestCase):
         write(os.path.join(self.fx.run, "06-yosys-synthesis", "config.json"),
               {"meta": {"step": "Yosys.Synthesis"}, "EXTRA_EXCLUDED_CELLS": None})
         self.assertFails("synthesis EXTRA_EXCLUDED_CELLS")
+
+    def test_each_drive_floor_cell_in_netlist_fails(self):
+        for cell in ("sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2"):
+            with self.subTest(cell=cell):
+                write(os.path.join(self.fx.run, "final", "nl", "top.nl.v"),
+                      ALLOWED_NETLIST + "%s fanout66 (.A(a), .X(v));\n" % cell)
+                rep = self.assertFails("excluded cells still in the final netlist")
+                self.assertEqual(rep["excluded_cell_hits"], {"%s (%s) in top.nl.v" % (cell, cell): 1})
+
+    def test_old_three_exclusions_fail(self):
+        # the f6f4db6 list without the drive floor is not accepted any more
+        cfg = dict(psa.EXPECT_CFG, STA_CORNERS=psa.CORNERS, EXTRA_EXCLUDED_CELLS=psa.EXCLUDED[:3],
+                   meta={"step": "OpenROAD.STAPostPNR"})
+        write(os.path.join(self.fx.sta, "config.json"), cfg)
+        self.assertFails("PnR EXTRA_EXCLUDED_CELLS")
+
+    def test_missing_cts_step_fails(self):
+        shutil.rmtree(self.fx.cts)
+        self.assertFails("expected exactly one OpenROAD.CTS step directory, found 0")
+
+    def test_wrong_cts_root_fails(self):
+        self.fx.save_cts(dict(psa.EXPECT_CTS, CTS_ROOT_BUFFER="sky130_fd_sc_hd__clkbuf_8"))
+        self.assertFails("CTS CTS_ROOT_BUFFER")
+
+    def test_cts_list_with_clkbuf_2_or_missing_fails(self):
+        self.fx.save_cts(dict(psa.EXPECT_CTS, CTS_CLK_BUFFERS=["sky130_fd_sc_hd__clkbuf_8", "sky130_fd_sc_hd__clkbuf_4",
+                                                               "sky130_fd_sc_hd__clkbuf_2"]))
+        self.assertFails("CTS CTS_CLK_BUFFERS")
+        self.fx.save_cts({"CTS_ROOT_BUFFER": psa.EXPECT_CTS["CTS_ROOT_BUFFER"]})
+        self.assertFails("CTS CTS_CLK_BUFFERS is None")
 
 
 if __name__ == "__main__":

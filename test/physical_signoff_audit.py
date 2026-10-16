@@ -9,7 +9,10 @@ Step directories are found by the `meta.step` of their own config.json, not by n
     SIGNOFF_ALLOWED_VIOLATIONS 0 (numbers of the policy only; they prove nothing about the design);
   * exactly one OpenROAD.STAPostPNR step; its config: CLOCK_PERIOD 40 (25 MHz), DIE_AREA of the 1x2 template,
     MAX_TRANSITION_CONSTRAINT 0.75, MAX_FANOUT_CONSTRAINT 10, STA_CORNERS == the nine expected corners,
-    EXTRA_EXCLUDED_CELLS == the three HD delay-family patterns (also in the Yosys.Synthesis config);
+    EXTRA_EXCLUDED_CELLS == the three HD delay-family patterns plus exactly buf_1, clkbuf_1 and clkbuf_2
+    (section 9e; also in the Yosys.Synthesis config);
+  * exactly one OpenROAD.CTS step; its config: CTS_CLK_BUFFERS == [clkbuf_8, clkbuf_4] and
+    CTS_ROOT_BUFFER == clkbuf_16 (section 9e);
   * the checker steps accepted the strict corner wildcards: setup, hold, max slew and max cap all ["*"];
   * for EACH of the nine corners: <corner>/checks.rpt exists; metrics present, finite, numeric; setup and hold
     worst slack >= 0; setup/hold violation counts 0; max cap, max slew and max fanout violation counts 0 (the
@@ -39,8 +42,13 @@ SIDECAR = os.path.join("specs", "physical", "gf16_dot4_sky26d_1x2_25mhz_eval.t27
 
 CORNERS = ["%s_%s" % (rc, pvt) for rc in ("nom", "min", "max")
            for pvt in ("tt_025C_1v80", "ss_100C_1v60", "ff_n40C_1v95")]
-# exclusion PATTERNS of sidecar section 9 (fnmatch syntax, as LibreLane applies EXTRA_EXCLUDED_CELLS)
-EXCLUDED = ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*", "sky130_fd_sc_hd__dlymetal*"]
+# exclusion PATTERNS of sidecar sections 9 and 9e (fnmatch syntax, as LibreLane applies EXTRA_EXCLUDED_CELLS):
+# the three delay families and the exact buffer drive floor (buf_12 / clkbuf_16 do not match the exact names)
+EXCLUDED = ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*", "sky130_fd_sc_hd__dlymetal*",
+            "sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2"]
+# CTS buffers of section 9e, read from the OpenROAD.CTS step config (the STAPostPNR config has no CTS keys)
+EXPECT_CTS = {"CTS_CLK_BUFFERS": ["sky130_fd_sc_hd__clkbuf_8", "sky130_fd_sc_hd__clkbuf_4"],
+              "CTS_ROOT_BUFFER": "sky130_fd_sc_hd__clkbuf_16"}
 POLICY = {"SIGNOFF_STA_CORNERS": 9, "SIGNOFF_MAX_SLEW_PS": 750, "SIGNOFF_MAX_FANOUT": 10,
           "SIGNOFF_ALLOWED_VIOLATIONS": 0}
 EXPECT_CFG = {"CLOCK_PERIOD": 40, "DIE_AREA": [0, 0, 161, 225.76],
@@ -171,6 +179,19 @@ class Audit:
             if scfg is not None and scfg.get("EXTRA_EXCLUDED_CELLS") != EXCLUDED:
                 self.fail("synthesis EXTRA_EXCLUDED_CELLS %r != %r" % (scfg.get("EXTRA_EXCLUDED_CELLS"), EXCLUDED))
 
+    def cts(self):
+        """Exactly one OpenROAD.CTS step; its config must carry the exact section-9e buffer list and root."""
+        d = self.one_step("OpenROAD.CTS")
+        if d is None:
+            return
+        cfg = self.read(os.path.join(d, "config.json"), "OpenROAD.CTS config")
+        if cfg is None:
+            return
+        self.report["cts"] = {k: cfg.get(k) for k in EXPECT_CTS}
+        for key, want in EXPECT_CTS.items():
+            if cfg.get(key) != want:
+                self.fail("CTS %s is %r, expected %r" % (key, cfg.get(key), want))
+
     def checkers(self):
         self.report["checker_corners"] = {}
         for step_id, var in CHECKERS.items():
@@ -286,6 +307,7 @@ class Audit:
             if sta:
                 self.config(sta)
                 self.corners(sta)
+            self.cts()
             self.checkers()
             self.final(sta)
             self.netlist()
@@ -318,7 +340,8 @@ def markdown(rep):
     lines += ["", "Worst corner counts (None = not all 9 corners valid): %s" % rep.get("max_over_corners"),
               "Partial maxima over valid corners only: %s" % rep.get("known_max_partial"),
               "Final: %s" % rep.get("final"), "Checker corners: %s" % rep.get("checker_corners"),
-              "Excluded cells in final netlist: %s" % rep.get("excluded_cell_hits"), ""]
+              "Excluded cells in final netlist: %s" % rep.get("excluded_cell_hits"),
+              "CTS buffers: %s" % rep.get("cts"), ""]
     if rep["problems"]:
         lines += ["Problems:"] + ["- " + p for p in rep["problems"]] + [""]
     lines += ["Sources (sha256):"] + ["- `%s` %s" % kv for kv in sorted(rep["sources_sha256"].items())]

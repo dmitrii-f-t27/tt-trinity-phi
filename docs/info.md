@@ -111,8 +111,13 @@ None.
 
 - **Evaluation branch, not ready:** 1x2 tiles, 25 MHz (40 ns) target; 8 enabled clocks unchanged. The shape
   requires 2 tile units (available allocation unchecked). Not acceptance of #100 (target: one 1x1 tile).
-- Fit and timing of the latest candidate are **unverified**. At `51bf202`, 167 max-slew violations and a
-  clock-root fanout of 16 (limit 10) are open; the candidate fix is not yet validated.
+- Archived measured baseline (`f6f4db6`,
+  [run](https://github.com/dmitrii-f-t27/tt-trinity-phi/actions/runs/38855207187)): 293 max-slew pins; cap,
+  fanout, setup, hold, DRC, LVS and antenna 0. A calibrated
+  [diagnostic](https://github.com/dmitrii-f-t27/tt-trinity-phi/actions/runs/38893222916) traced the gap to
+  global-route versus extracted parasitics. The current candidate is a stricter buffer drive floor; any revision is
+  ready only after its own official GDS, zero violations in all 9 strict corners, precheck, gate-level, RTL,
+  native and Docs runs.
 - No performance, energy or area claim; nothing submitted, no new allocation or purchase. Archived blocks in `src/`
   and `docs/` are history, not part of this design. Original project by Dmitrii Vasilev; DOT4 rewrite by
   Dmitrii Fedorov. Apache-2.0.

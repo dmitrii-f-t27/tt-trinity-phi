@@ -13,7 +13,9 @@ Physical profile, chosen by the environment variable PHI_PROFILE (exact values o
   unset / "default"  1x1, clock_hz 50000000, CLOCK_PERIOD 20 (the original #100 envelope)
   "eval-1x2"         isolated evaluation: 1x2, clock_hz 25000000, CLOCK_PERIOD 40, density 65,
                      AREA 1, MFS3 False, AREA_USE_NF False, the three excluded HD delay-cell
-                     families, strict timing/slew/cap checker corners ["*"], CTS 20 / 50 um, repair
+                     families plus exactly buf_1, clkbuf_1 and clkbuf_2 (section 9e), strict
+                     timing/slew/cap checker corners ["*"], CTS 20 / 50 um with the buffer list
+                     [clkbuf_8, clkbuf_4] and root clkbuf_16, repair
                      margins 20 / 20 % and post-global-route repair 10 / 10 % with re-route
                      (sidecar section 9a); the constants of
                      specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27 must agree with info.yaml and
@@ -55,11 +57,18 @@ PROFILES = {
                    # physical closure (sidecar section 9): the three HD delay-cell families excluded
                    # (stricter mapping), all checkers strict, experimental CTS geometry 20 / 50 um;
                    # limits 0.75 ns / fanout 10 are not touched here
+                   # sidecar section 9e: plus the exact buffer drive floor (buf_1, clkbuf_1, clkbuf_2 only;
+                   # buf_2 and up, clkbuf_4 and up stay available)
                    "EXTRA_EXCLUDED_CELLS": ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*",
-                                            "sky130_fd_sc_hd__dlymetal*"],
+                                            "sky130_fd_sc_hd__dlymetal*", "sky130_fd_sc_hd__buf_1",
+                                            "sky130_fd_sc_hd__clkbuf_1", "sky130_fd_sc_hd__clkbuf_2"],
                    "TIMING_VIOLATION_CORNERS": ["*"], "MAX_SLEW_VIOLATION_CORNERS": ["*"],
                    "MAX_CAP_VIOLATION_CORNERS": ["*"],
                    "CTS_DISTANCE_BETWEEN_BUFFERS": 20, "CTS_CLK_MAX_WIRE_LENGTH": 50,
+                   # section 9e: the CTS buffer list is used as given by cts.tcl (no dont-use filter), so
+                   # it is set explicitly without clkbuf_2; the root buffer stays clkbuf_16
+                   "CTS_CLK_BUFFERS": ["sky130_fd_sc_hd__clkbuf_8", "sky130_fd_sc_hd__clkbuf_4"],
+                   "CTS_ROOT_BUFFER": "sky130_fd_sc_hd__clkbuf_16",
                    # sidecar section 9a: post-placement repair margins at the official 20 / 20 %, and the
                    # official (experimental) post-global-route repair with its defaults 10 / 10 % and the
                    # re-route on; the constraints (0.75 ns, fanout 10, library max cap) are not raised
