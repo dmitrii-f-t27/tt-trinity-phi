@@ -1,0 +1,102 @@
+---
+name: stage41-diagnostic
+
+# READ-ONLY observation of the archived stage-41 database of f6f4db6 (sidecar section 9b). It measures; it does
+# not repair, resize, place, build a GDS or change any limit, and it does not replace or weaken any official
+# workflow (gds, test, docs, format, no-star run unchanged on the same push). A green job means only that the
+# measurement is complete; any non-zero slew remains a physical FAIL.
+
+on:
+  push:
+    branches: [codex/sky26d-phi-dot4-1x2-eval]
+    paths:
+      - "diagnostics/stage41/**"
+      - ".github/workflows/stage41-diagnostic.yml"
+      - "test/test_stage41_diagnostic.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  IMAGE: ghcr.io/librelane/librelane@sha256:f91b21d75f79871f9ccf37451020b5d2f7b3236881a997ff709c561e8280a30f
+  IMAGE_ID: sha256:897f703b9de811e792eb22023fd0986418bbbd9ae5ff511eb74419008eac810f
+  PDK_VERSION: 8afc8346a57fe1ab7934ba5a6056ea8b43078e71
+  PDK_ROOT: /home/runner/.ciel
+  WORK_ROOT: /home/runner/work/tt-trinity-phi/tt-trinity-phi
+  RUNS_MOUNT: /home/runner/work/tt-trinity-phi/tt-trinity-phi/runs
+  STAGE41: /home/runner/work/tt-trinity-phi/tt-trinity-phi/runs/wokwi/41-openroad-repairdesignpostgrt
+
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+
+      - name: Unit tests of the fail-closed helpers
+        run: python3 test/test_stage41_diagnostic.py -v
+
+      - name: Fetch and verify the archived artifact (metadata, zip sha256, safe extraction, member hashes)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p diag-out
+          python3 diagnostics/stage41/fetch_verify.py --dest "$RUNNER_TEMP/s41" --report diag-out/fetch-report.json
+
+      - name: Pull the pinned image and verify its ID
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 "$IMAGE"
+          docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' "$IMAGE" | tee diag-out/image.txt
+          test "$(docker image inspect --format '{{.Id}}' "$IMAGE")" = "$IMAGE_ID"
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$IMAGE")" = "linux/amd64"
+
+      - name: Bootstrap the pinned PDK (network only here, public PDK)
+        run: |
+          set -euo pipefail
+          mkdir -p "$PDK_ROOT"
+          docker run --rm --platform linux/amd64 -v "$PDK_ROOT:$PDK_ROOT" "$IMAGE" \
+            ciel enable --pdk-family sky130 --pdk-root "$PDK_ROOT" "$PDK_VERSION"
+
+      - name: Tool versions (no network)
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --platform linux/amd64 "$IMAGE" openroad -version | tee diag-out/openroad-version.txt
+          docker run --rm --network none --platform linux/amd64 "$IMAGE" \
+            python3 -c "from librelane.__version__ import __version__ as v; print(v)" | tee diag-out/librelane-version.txt
+          test "$(cat diag-out/librelane-version.txt)" = "3.0.14"
+
+      - name: Observe stage 41 in all 9 corners (no network, archive and PDK read-only)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/s41-obs"
+          docker run --rm --network none --platform linux/amd64 \
+            -v "$RUNNER_TEMP/s41/extract/runs:$RUNS_MOUNT:ro" \
+            -v "$GITHUB_WORKSPACE/src:$WORK_ROOT/src:ro" \
+            -v "$PDK_ROOT:$PDK_ROOT:ro" \
+            -v "$GITHUB_WORKSPACE/diagnostics/stage41:/diag:ro" \
+            -v "$RUNNER_TEMP/s41-obs:/obs" \
+            "$IMAGE" python3 /diag/measure_step.py \
+              --config "$STAGE41/config.json" --state-in "$STAGE41/state_out.json" \
+              --pdk-root "$PDK_ROOT/ciel/sky130/versions/$PDK_VERSION" --tcl /diag/observe.tcl --out /obs
+
+      - name: Summarize and compare with the final sign-off (no causal claim)
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p diag-out
+          if [ -d "$RUNNER_TEMP/s41-obs" ]; then cp -r "$RUNNER_TEMP/s41-obs" diag-out/observation; fi
+          python3 diagnostics/stage41/summarize.py --obs "$RUNNER_TEMP/s41-obs" \
+            --runs "$RUNNER_TEMP/s41/extract/runs" --fetch-report diag-out/fetch-report.json --out diag-out
+
+      - name: Upload the diagnostic outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: STAGE41_DIAGNOSTIC
+          path: diag-out/
+          if-no-files-found: error
