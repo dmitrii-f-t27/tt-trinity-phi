@@ -425,3 +425,69 @@ invariant eval_eight_clocks
 // envelope or latency change: exactly 8 enabled clocks, all 9 strict corners, 0.75 ns,
 // fanout 10, library cap, 1x2 / 40 ns, GF16 S1 E6 M9 bias 31; nothing is allocated or
 // submitted, and a 1x2 result is not acceptance of issue #100.
+//
+// ----------------------------------------------------------------------------
+// 9e. Physical candidate after the calibrated measurement: buffer drive floor
+// ----------------------------------------------------------------------------
+// Policy written BEFORE implementation; it is a hypothesis correction, not a
+// claimed fix and not a claim of an upstream tool bug.
+// Measured (instrumentation 224fa8520023a3d61da02bdf629cc1ecae183f40, workflow
+// 38893222916, artifact 12042607864): C2, a separate cold process on the archived
+// final f6f4db6 database with only the final SPEF files, reproduced the archived
+// sign-off exactly (293 / 228 / 147 / 11 slew pin sets, counts and values within
+// 1e-6 in all 9 corners; the same 32 unannotated drivers, no partial). C1, a
+// separate process on the same database (same SDC, liberty and LEF hashes; the 4
+// logical and placement snapshots identical, sha256
+// f40946738cbc947dbec1f10d17b7ea6974412dcc869c96ba2442af3f6b121c39) with the stored
+// global routes (have_routes = 1), gave 88 in each ss corner and 0 elsewhere. On
+// this one database, the parasitic model therefore accounts for 88 versus 293. It
+// does NOT explain why repair chose these cells.
+// Observed drivers: all 30 max_ss violating drivers have master type CORE, no STA
+// clock and no dont-touch; 17 sky130_fd_sc_hd__buf_1, 12 sky130_fd_sc_hd__clkbuf_1,
+// 1 sky130_fd_sc_hd__clkbuf_2. The 8 drivers seen at stage 41 were buf_1 at stage 39
+// and clkbuf_1 after stage 41. Pin capacitance is the same under both models; the
+// wire capacitance is higher with extracted RC (fanout66/X 0.016743 -> 0.035292 pF,
+// slew 0.900189 -> 1.235101 ns; fanout83/X clkbuf_2 0.026881 -> 0.060008 pF,
+// 0.486687 -> 0.755606 ns). The largest probed slew ratio is 2.0063 (input8/X); it is
+// not a guaranteed margin and is not generalized to other nets.
+// Source evidence (OpenROAD dcf36133, cached Resizer.cc / RepairDesign.cc):
+// repeaters and port buffers use buffer_lowest_drive_, the last (highest drive
+// resistance) cell of the pruned buffer list (Resizer.cc 984-990); that list only
+// takes buffers that are not dont-use (Resizer.cc 1869), and resizing skips dont-use
+// candidates (Resizer.cc 1434, 1951). LibreLane EXTRA_EXCLUDED_CELLS already reaches
+// the dont-use set (the 3 delay families were absent from f6f4db6). The pinned
+// LibreLane 3.0.14 cts.tcl get_buflist takes CTS_CLK_BUFFERS directly (lines 41-64)
+// and does not apply that filter, so the CTS list must be set explicitly.
+// Candidate (one change set, nothing else):
+//   - EXTRA_EXCLUDED_CELLS = exactly these 6 entries, no other wildcard:
+//       sky130_fd_sc_hd__clkdlybuf*, sky130_fd_sc_hd__dlygate*,
+//       sky130_fd_sc_hd__dlymetal* (unchanged), sky130_fd_sc_hd__buf_1,
+//       sky130_fd_sc_hd__clkbuf_1, sky130_fd_sc_hd__clkbuf_2 (exact names; buf_2 and
+//       up, clkbuf_4 and up, buf_12 / buf_16 and clkbuf_16 stay available);
+//   - CTS_CLK_BUFFERS = [sky130_fd_sc_hd__clkbuf_8, sky130_fd_sc_hd__clkbuf_4]
+//     (the archived default list without clkbuf_2); CTS_ROOT_BUFFER stays
+//     sky130_fd_sc_hd__clkbuf_16; CTS distance 20 / wire 50 unchanged;
+//   - SYNTH_BUFFER_CELL stays sky130_fd_sc_hd__buf_2/A/X; no custom or grafted
+//     cell, no manual netlist edit, no tool patch; the PDK / official cell filters
+//     stay as they are and are only added to.
+// Unchanged: GPL repair 20 / 20, post-GRT repair 10 / 10, RUN_GRT true, 40 ns, all
+// 9 strict corners, 0.75 ns, fanout 10, library cap, every checker, exactly 8
+// enabled clocks, GF16 S1 E6 M9 bias 31, independent A/B, the interface, the RTL, the
+// numeric spec and the native / functional tests.
+// Why: the observed weak drivers remained in place through the post-global-route
+// repair (some, such as buf_1, may already exist from the placement-stage repair);
+// on the calibrated database the global-route estimate under-estimates slew compared
+// with extracted RC; a stricter drive floor removes the 3 observed violating master
+// types (all 30 drivers). The choice of this lever is a hypothesis, not a guarantee:
+// timing, hold, area, routing and new violations are UNKNOWN until the CI run.
+// Strict validation (a check, not a waiver): the auditor's excluded set becomes these
+// exact 6 entries (fnmatchcase per token as now); a final netlist or design that
+// contains any of buf_1, clkbuf_1, clkbuf_2 or a delay family fails; negative
+// fixtures show that each of the 3 new names is caught and that buf_2, clkbuf_4,
+// buf_12 and clkbuf_16 are not; the eval check and the auditor require
+// CTS_CLK_BUFFERS = [clkbuf_8, clkbuf_4] and CTS_ROOT_BUFFER = clkbuf_16 exactly.
+// PASS only if the official GDS workflow, the strict 9-corner sign-off (0 slew, cap,
+// fanout, setup, hold; DRC, LVS, antenna 0), precheck and gate-level tests pass with
+// these exact settings; anything else is FAIL and is reported as measured. No new
+// margin sweep or second lever is added in the same run; a 1x2 result is not
+// acceptance of issue #100; nothing is allocated, purchased or submitted.
