@@ -13,11 +13,15 @@ multiplier and one shared adder, 8 clocks per dot product; `uio` is input only. 
 > allocated slots. 25 MHz is a target, not a measured or claimed performance. RTL comments that say 1x1
 > are history of the #100 contract; the physical envelope of this branch is the sidecar and `info.yaml`.
 >
-> Physical status: at `51bf202` the GDS was built, but 167 max-slew violations and one clock-root fanout
-> violation (16 > 10) are open, so it is **not ready**. Sidecar section 9 sets the sign-off policy (all 9
-> corners, every violation count 0, clock included). A candidate fix in `src/config.json` (exclusion of
-> `sky130_fd_sc_hd__clkdlybuf4s25_1` / `clkdlybuf4s50_1`, strict checker corners, CTS 20 / 50 um wire
-> buffering) is unvalidated until the `physical-signoff` job of a run reports it.
+> Physical status, **not ready**. Sidecar section 9 sets the sign-off policy (all 9 corners, every violation
+> count 0, clock included). `51bf202`: 167 max-slew violations (all driven by `clkdlybuf4s25_1`) and a clock-root
+> fanout of 16 (> 10). `9eb7373` excluded the two `clkdlybuf4s25/50_1` cells and added strict checker corners and
+> CTS 20 / 50 um: clock-root fanout 0 in all 9 corners and DRC/LVS/antenna 0, but the repair then used other delay
+> cells (`dlygate4sd3_1` drove all 8 violating nets in `max_ss`; `dlymetal6s4s_1` sits on the worst setup path),
+> and 105 max-slew plus 15 setup violations (worst -2.34 ns) remained. Current candidate: the three HD
+> delay-cell families `sky130_fd_sc_hd__clkdlybuf*`, `dlygate*` and `dlymetal*` excluded from mapping (a stricter
+> restriction; official filters and the 0.75 ns / 10 limits unchanged). Unvalidated: area, hold, setup and slew
+> are decided only by the `physical-signoff` job of a run.
 
 ## Status (read this first)
 

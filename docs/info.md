@@ -109,17 +109,10 @@ None.
 
 ## Status and limits
 
-- **Evaluation branch:** 1x2 tiles, 25 MHz (40 ns) target, from
-  `specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27`. Not acceptance of issue #100 (its target is one
-  1x1 tile), not ready, nothing ordered. The shape requires 2 tile units; the available allocation
-  has not been checked for this branch.
-- Fit in 1x2 and timing at 25 MHz are **unknown** until the GDS run (all-corner STA) of the latest commit.
-  25 MHz is a target, not a measured performance; the protocol, pins and 8-clock latency are unchanged.
-- At commit `51bf202` the layout built, but it is **not ready**: 167 max-slew violations and one clock-root
-  fanout violation (16 against a limit of 10) are open. A candidate fix (two delay cells excluded, strict
-  checks in all 9 corners, CTS wire buffering) is not yet validated.
-- No performance, energy or area claim is made.
-- Archived blocks of earlier revisions (formats, quantizers, ROMs, mesh, power modules) remain in
-  `src/` and `docs/` as history only. They are not part of this design.
-
-Original project by Dmitrii Vasilev; DOT4 rewrite by Dmitrii Fedorov. Apache-2.0.
+- **Evaluation branch, not ready:** 1x2 tiles, 25 MHz (40 ns) target; 8 enabled clocks unchanged. The shape
+  requires 2 tile units (available allocation unchecked). Not acceptance of #100 (target: one 1x1 tile).
+- Fit and timing of the latest candidate are **unverified**. At `51bf202`, 167 max-slew violations and a
+  clock-root fanout of 16 (limit 10) are open; the candidate fix is not yet validated.
+- No performance, energy or area claim; nothing submitted, no new allocation or purchase. Archived blocks in `src/`
+  and `docs/` are history, not part of this design. Original project by Dmitrii Vasilev; DOT4 rewrite by
+  Dmitrii Fedorov. Apache-2.0.

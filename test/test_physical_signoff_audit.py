@@ -95,6 +95,7 @@ class AuditTests(unittest.TestCase):
         # parser check on made-up numbers only, not physical evidence
         rep = self.fx.audit()
         self.assertEqual(rep["verdict"], "PASS", rep["problems"])
+        self.assertEqual(rep["excluded_cell_hits"], {})   # buf_2 matches none of the delay-family patterns
 
     def test_absent_corner_fails(self):
         c = psa.CORNERS[7]
@@ -157,6 +158,21 @@ class AuditTests(unittest.TestCase):
         write(os.path.join(self.fx.run, "final", "nl", "top.nl.v"),
               "sky130_fd_sc_hd__clkdlybuf4s25_1 fanout80 (.A(a), .X(x));\n")
         self.assertFails("excluded cells still in the final netlist")
+
+    def test_dlygate_in_netlist_fails(self):
+        # the cell that drove all 8 max_ss slew violations at 9eb7373
+        write(os.path.join(self.fx.run, "final", "pnl", "top.pnl.v"),
+              "sky130_fd_sc_hd__buf_2 u1 (.A(a), .X(x));\nsky130_fd_sc_hd__dlygate4sd3_1 fanout79 (.A(a), .X(y));\n")
+        rep = self.assertFails("excluded cells still in the final netlist")
+        self.assertIn("sky130_fd_sc_hd__dlygate4sd3_1 (sky130_fd_sc_hd__dlygate*) in top.pnl.v",
+                      rep["excluded_cell_hits"])
+
+    def test_dlymetal_in_netlist_fails(self):
+        write(os.path.join(self.fx.run, "final", "nl", "top.nl.v"),
+              "sky130_fd_sc_hd__dlymetal6s4s_1 u7 (.A(a), .X(x));\n")
+        rep = self.assertFails("excluded cells still in the final netlist")
+        self.assertEqual(rep["excluded_cell_hits"],
+                         {"sky130_fd_sc_hd__dlymetal6s4s_1 (sky130_fd_sc_hd__dlymetal*) in top.nl.v": 1})
 
     def test_relaxed_checker_corners_fail(self):
         d = os.path.join(self.fx.run, "82-checker")

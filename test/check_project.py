@@ -12,8 +12,9 @@ sensitivity lists and attributes are not arithmetic). Python 3 standard library 
 Physical profile, chosen by the environment variable PHI_PROFILE (exact values only):
   unset / "default"  1x1, clock_hz 50000000, CLOCK_PERIOD 20 (the original #100 envelope)
   "eval-1x2"         isolated evaluation: 1x2, clock_hz 25000000, CLOCK_PERIOD 40, density 65,
-                     AREA 1, MFS3 False, AREA_USE_NF False, the two excluded delay cells, strict
-                     timing/slew/cap checker corners ["*"], CTS 20 / 50 um; the constants of
+                     AREA 1, MFS3 False, AREA_USE_NF False, the three excluded HD delay-cell
+                     families, strict timing/slew/cap checker corners ["*"], CTS 20 / 50 um, no
+                     DESIGN_REPAIR_MAX_SLEW_PCT override; the constants of
                      specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27 must agree with info.yaml and
                      src/config.json, its latency must equal LATENCY_CLOCKS = 8 of the numeric spec, and
                      the numeric spec must be byte-identical to NUMERIC_SPEC_SHA256.
@@ -50,12 +51,16 @@ PROFILES = {
         "tiles": "1x2", "clock_hz": 25000000, "sidecar": PHYSICAL_SPEC,
         "config": {"CLOCK_PERIOD": 40, "PL_TARGET_DENSITY_PCT": 65, "SYNTH_STRATEGY": "AREA 1",
                    "SYNTH_ABC_USE_MFS3": False, "SYNTH_ABC_AREA_USE_NF": False,
-                   # physical closure (sidecar section 9): two delay cells excluded, all checkers strict,
-                   # experimental CTS geometry 20 / 50 um; limits 0.75 ns / fanout 10 are not touched here
-                   "EXTRA_EXCLUDED_CELLS": ["sky130_fd_sc_hd__clkdlybuf4s25_1", "sky130_fd_sc_hd__clkdlybuf4s50_1"],
+                   # physical closure (sidecar section 9): the three HD delay-cell families excluded
+                   # (stricter mapping), all checkers strict, experimental CTS geometry 20 / 50 um;
+                   # limits 0.75 ns / fanout 10 are not touched here
+                   "EXTRA_EXCLUDED_CELLS": ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*",
+                                            "sky130_fd_sc_hd__dlymetal*"],
                    "TIMING_VIOLATION_CORNERS": ["*"], "MAX_SLEW_VIOLATION_CORNERS": ["*"],
                    "MAX_CAP_VIOLATION_CORNERS": ["*"],
                    "CTS_DISTANCE_BETWEEN_BUFFERS": 20, "CTS_CLK_MAX_WIRE_LENGTH": 50},
+        # keys this profile requires to be ABSENT (official defaults apply)
+        "absent": ["DESIGN_REPAIR_MAX_SLEW_PCT"],
     },
 }
 
@@ -246,6 +251,9 @@ def profile_gate(name, prof, tiles, clock):
         # exact type too: False must not match 0, 40 must not match 40.0
         if type(got) is not type(want) or got != want:
             fail("src/config.json %s is %r, expected %r (profile %s)" % (key, got, want, name))
+    for key in prof.get("absent", []):
+        if key in cfg:
+            fail("src/config.json sets %s = %r; profile %s requires the official default" % (key, cfg[key], name))
     period = cfg.get("CLOCK_PERIOD")
     if not isinstance(clock, int) or not isinstance(period, int) or clock * period != 10 ** 9:
         fail("info.yaml clock_hz %r and src/config.json CLOCK_PERIOD %r ns are not one clock" % (clock, period))

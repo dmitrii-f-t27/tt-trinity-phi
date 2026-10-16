@@ -9,20 +9,22 @@ Step directories are found by the `meta.step` of their own config.json, not by n
     SIGNOFF_ALLOWED_VIOLATIONS 0 (numbers of the policy only; they prove nothing about the design);
   * exactly one OpenROAD.STAPostPNR step; its config: CLOCK_PERIOD 40 (25 MHz), DIE_AREA of the 1x2 template,
     MAX_TRANSITION_CONSTRAINT 0.75, MAX_FANOUT_CONSTRAINT 10, STA_CORNERS == the nine expected corners,
-    EXTRA_EXCLUDED_CELLS == the two delay cells (also in the Yosys.Synthesis config);
+    EXTRA_EXCLUDED_CELLS == the three HD delay-family patterns (also in the Yosys.Synthesis config);
   * the checker steps accepted the strict corner wildcards: setup, hold, max slew and max cap all ["*"];
   * for EACH of the nine corners: <corner>/checks.rpt exists; metrics present, finite, numeric; setup and hold
     worst slack >= 0; setup/hold violation counts 0; max cap, max slew and max fanout violation counts 0 (the
     clock network is included, nothing is waived); the footer counts of checks.rpt equal the metrics;
   * final/metrics.json: Magic DRC 0, LVS errors 0, antenna 0, utilization <= 1; critical disconnected pins and
     filtered unannotated nets 0 where reported;
-  * the final netlist exists and instantiates neither excluded cell.
+  * the final netlist exists, has HD cells, and no cell-name token matches an exclusion pattern
+    (fnmatchcase on the real tokens; the configured pattern list alone proves nothing).
 A missing, malformed, non-finite, negative or inconsistent value is a FAIL, never a zero. A missing final/
 (e.g. after a deferred checker error) is reported as such, with whatever STA numbers exist, and FAILS.
 Outputs: <out>/physical-signoff.json and <out>/PHYSICAL_SIGNOFF.md. Exit 0 only on PASS.
 Usage (repo root): python3 test/physical_signoff_audit.py [--run-dir runs/wokwi] [--out physical-signoff]
 """
 import argparse
+import fnmatch
 import glob
 import hashlib
 import json
@@ -37,7 +39,8 @@ SIDECAR = os.path.join("specs", "physical", "gf16_dot4_sky26d_1x2_25mhz_eval.t27
 
 CORNERS = ["%s_%s" % (rc, pvt) for rc in ("nom", "min", "max")
            for pvt in ("tt_025C_1v80", "ss_100C_1v60", "ff_n40C_1v95")]
-EXCLUDED = ["sky130_fd_sc_hd__clkdlybuf4s25_1", "sky130_fd_sc_hd__clkdlybuf4s50_1"]
+# exclusion PATTERNS of sidecar section 9 (fnmatch syntax, as LibreLane applies EXTRA_EXCLUDED_CELLS)
+EXCLUDED = ["sky130_fd_sc_hd__clkdlybuf*", "sky130_fd_sc_hd__dlygate*", "sky130_fd_sc_hd__dlymetal*"]
 POLICY = {"SIGNOFF_STA_CORNERS": 9, "SIGNOFF_MAX_SLEW_PS": 750, "SIGNOFF_MAX_FANOUT": 10,
           "SIGNOFF_ALLOWED_VIOLATIONS": 0}
 EXPECT_CFG = {"CLOCK_PERIOD": 40, "DIE_AREA": [0, 0, 161, 225.76],
@@ -255,15 +258,21 @@ class Audit:
         if not files:
             self.fail("no final netlist (final/nl/*.nl.v or final/pnl/*.pnl.v)")
             return
+        # Real HD cell-name tokens of each netlist, matched against the exclusion PATTERNS with
+        # fnmatchcase (the patterns are never turned into regular expressions).
         hits = {}
         for path in files:
             self.sources[os.path.relpath(path, self.run_dir)] = sha256(path)
             with open(path, encoding="utf-8", errors="replace") as f:
-                text = f.read()
-            for cell in EXCLUDED:
-                n = len(re.findall(r"\b%s\b" % cell, text))
-                if n:
-                    hits["%s in %s" % (cell, os.path.basename(path))] = n
+                tokens = re.findall(r"\bsky130_fd_sc_hd__\w+", f.read())
+            if not tokens:
+                self.fail("%s contains no sky130_fd_sc_hd cell (an empty netlist proves nothing)"
+                          % os.path.basename(path))
+            for token in tokens:
+                for pattern in EXCLUDED:
+                    if fnmatch.fnmatchcase(token, pattern):
+                        key = "%s (%s) in %s" % (token, pattern, os.path.basename(path))
+                        hits[key] = hits.get(key, 0) + 1
         self.report["excluded_cell_hits"] = hits
         if hits:
             self.fail("excluded cells still in the final netlist: %s" % hits)

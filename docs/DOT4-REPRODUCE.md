@@ -288,11 +288,17 @@ max-slew checker only warns by default and no fanout checker exists. Policy: sid
 `checks.rpt`, final metrics and netlists, uploaded right after Build GDS) and runs
 `python3 test/physical_signoff_audit.py --run-dir runs/wokwi --out physical-signoff`: all 9 corners, every
 setup/hold/cap/slew/fanout count 0 (clock included), slack >= 0, report footers equal to the metrics, Magic DRC,
-LVS and antenna 0, utilization <= 1, the strict checker corners actually accepted, and the two excluded delay
-cells absent from the final netlist. Any missing or inconsistent input fails it. Unit tests on synthetic fixtures
-(`python3 test/test_physical_signoff_audit.py`) only show that the auditor fails closed. The candidate fix in
-`src/config.json` (exclusion of `clkdlybuf4s25_1` / `clkdlybuf4s50_1`, strict checker corners, CTS distance
-between buffers 20 um and clock max wire length 50 um) is not validated; the limits 0.75 ns / 10 are unchanged.
+LVS and antenna 0, utilization <= 1, the strict checker corners actually accepted, `EXTRA_EXCLUDED_CELLS` equal to
+the three patterns in the synthesis and PnR configs, and no cell-name token of the final netlists matching any of
+them (`fnmatchcase` on the real tokens). Any missing or inconsistent input fails it. Unit tests on synthetic
+fixtures (`python3 test/test_physical_signoff_audit.py`) only show that the auditor fails closed.
+History: `9eb7373` excluded only `clkdlybuf4s25_1` / `clkdlybuf4s50_1` (with strict checker corners and CTS distance
+between buffers 20 um, clock max wire length 50 um): clock-root fanout 0 in all 9 corners, DRC/LVS/antenna 0, but the
+strict flow FAILED with 105 max-slew violations (all 8 violating drivers in `max_ss` were `dlygate4sd3_1`) and 15 setup
+violations (worst -2.34 ns, `dlymetal6s4s_1` on the worst path). Current candidate in `src/config.json`: the three HD
+delay-cell families excluded through `EXTRA_EXCLUDED_CELLS` = `sky130_fd_sc_hd__clkdlybuf*`, `sky130_fd_sc_hd__dlygate*`,
+`sky130_fd_sc_hd__dlymetal*` (LibreLane applies these wildcards to synthesis and to the PnR dont-use list), everything
+else as `9eb7373`. A stricter restriction, not a relaxation; unvalidated, with area, hold and setup risk.
 
 ## 9. Datasheet preview (CI)
 After the official docs action, job `docs-preview` in `docs.yaml` downloads the artifact `PDF`, requires a
