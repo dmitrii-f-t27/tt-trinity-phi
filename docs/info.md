@@ -109,7 +109,12 @@ None.
 
 ## Status and limits
 
-- Fit in one 1x1 tile and the 50 MHz clock are **unknown** until the GDS run of the final commit.
+- **Evaluation branch:** 1x2 tiles, 25 MHz (40 ns) target, from
+  `specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27`. Not acceptance of issue #100 (its target is one
+  1x1 tile), not ready, nothing ordered. The shape requires 2 tile units; the available allocation
+  has not been checked for this branch.
+- Fit in 1x2 and timing at 25 MHz are **unknown** until the GDS run (all-corner STA) of the latest commit.
+  25 MHz is a target, not a measured performance; the protocol, pins and 8-clock latency are unchanged.
 - No performance, energy or area claim is made.
 - Archived blocks of earlier revisions (formats, quantizers, ROMs, mesh, power modules) remain in
   `src/` and `docs/` as history only. They are not part of this design.

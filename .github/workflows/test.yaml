@@ -23,7 +23,11 @@ jobs:
       - name: Oracle self-check, conformance vectors, spec vs oracle vs pin model
         run: python3 test/oracle_selfcheck.py
 
+      # Isolated 1x2 evaluation branch: the physical profile is selected explicitly (exact values,
+      # see test/check_project.py); the default profile stays 1x1 / 50 MHz.
       - name: Source list == Makefile == instantiated files, pins, official action pin, no '*'
+        env:
+          PHI_PROFILE: eval-1x2
         run: python3 test/check_project.py
 
   unit-full:
@@ -122,6 +126,8 @@ jobs:
       - name: Fetch Zig 0.16.0 from the official vendor and verify it (index size and sha256)
         run: python3 test/fetch_zig.py --version 0.16.0 --dest "$RUNNER_TEMP/zig" --path-file "$GITHUB_PATH"
 
+      # Evaluation branch: the 1x2 physical sidecar is also parsed, typechecked and test-reported
+      # (5/5 required, not sealed); the numeric gate above it is unchanged.
       - name: Native parse, typecheck, test-report, seal --save and --verify (no --force)
         run: |
           set -euo pipefail
@@ -131,7 +137,8 @@ jobs:
             --spec specs/numeric/gf16_dot4_sky26d.t27 \
             --out native-t27 \
             --t27-src "$GITHUB_WORKSPACE/t27-src" \
-            --t27-commit 32c25e8798e33e03d5f6e7aee876df8629008a49
+            --t27-commit 32c25e8798e33e03d5f6e7aee876df8629008a49 \
+            --physical-spec specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27
 
       - name: Upload the native outputs and the seal for review (not auto-committed)
         if: always()

@@ -4,7 +4,7 @@
 
 Sequential synthesis-only runs of the official LibreLane 3.0.14 (docker, `--flow Classic --to
 Yosys.Synthesis`, `--docker-no-tty` BEFORE `--dockerized`) on the SAME src/config_merged.json, the same sources,
-PDK, cell-exclusion union and 20 ns clock. DEFAULT mode: the 6 supported measurements (AREA 0/1/2 x AREA_USE_NF
+PDK, cell-exclusion union and clock (CLOCK_PERIOD of that config). DEFAULT mode: the 6 supported measurements (AREA 0/1/2 x AREA_USE_NF
 False/True, MFS3 False). `--include-mfs3` adds the 6 MFS3=True rows (12 in total). Only three supported
 configuration variables change:
     SYNTH_STRATEGY       AREA 0 | AREA 1 | AREA 2 (AREA 1 is the best strategy of the last full SYNTH9 table)

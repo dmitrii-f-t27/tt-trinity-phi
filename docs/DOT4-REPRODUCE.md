@@ -1,7 +1,11 @@
 # Reproducing every check of the SKY26d GF16 DOT4
 
 Contract: `specs/numeric/gf16_dot4_sky26d.t27` (issue #100). Run all commands from the repository
-root. Nothing here proves fit in one tile or the 50 MHz clock: only the GDS run of the final commit does.
+root. Nothing here proves fit or timing: only the GDS run (all-corner STA) of the latest commit does.
+Isolated evaluation branch: the physical envelope is 1x2 tiles / 25 MHz (40 ns) target from
+`specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27`; the source gate runs as
+`PHI_PROFILE=eval-1x2 python3 test/check_project.py` (the default profile stays 1x1 / 50 MHz and fails here).
+Not acceptance of #100, not ready, nothing ordered.
 
 Tools: `iverilog` + `vvp`, `yosys`, `verilator` (only for the archived width gate), Python 3, and a
 virtualenv with `cocotb==2.0.1` (`pip install -r test/requirements.txt`). The Python helpers use only
@@ -21,7 +25,7 @@ $T27C parse     specs/numeric/gf16_dot4_sky26d.t27       # syntax
 $T27C typecheck specs/numeric/gf16_dot4_sky26d.t27       # types ("0 errors, 0 warnings")
 python3 test/t27_exec.py             # executes all 23 tests + 5 invariants (fail closed)
 python3 test/oracle_selfcheck.py     # oracle vs code-space derivation, conformance JSON, spec vs model
-python3 test/check_project.py        # info.yaml == Makefile == instantiated files; pins; action pin; no '*'
+PHI_PROFILE=eval-1x2 python3 test/check_project.py   # this branch's profile; info.yaml == Makefile == instantiated files; pins; action pin; no '*'
 ```
 `t27c parse` and `typecheck` do not evaluate `assert`. `test/t27_exec.py` does, for this one spec, by
 transpiling the small .t27 subset it uses; it is an honest equivalent, not the t27 seal.
@@ -252,7 +256,7 @@ whether the area changes is decided only by the official measurement (no generic
 `gds.yaml` runs `python3 test/synth_area_tune.py` (`if: always()`, artifact `AREA_TUNE`) before the long physical-model
 simulation: by default six sequential synthesis-only runs of the official LibreLane 3.0.14 (`--docker-no-tty` before
 `--dockerized`, `--flow Classic --to Yosys.Synthesis`) on the same `src/config_merged.json`, sources, PDK, exclusion union
-and 20 ns clock, changing only `SYNTH_STRATEGY` (AREA 0 / AREA 1 / AREA 2; AREA 1 is the best strategy of the last full
+and clock (`CLOCK_PERIOD` of that config), changing only `SYNTH_STRATEGY` (AREA 0 / AREA 1 / AREA 2; AREA 1 is the best strategy of the last full
 official SYNTH9 table) and `SYNTH_ABC_AREA_USE_NF` (area mapper `&nf -R 1000` instead of `amap`) with
 `SYNTH_ABC_USE_MFS3` False; no linter flag, exclusion, clock or design change. The optional switch `--include-mfs3` adds the
 six `SYNTH_ABC_USE_MFS3` True rows (`mfs3 -aemvz -I 4 -O 2`, twelve in total). It is NOT run in CI: at the official 22c run (GDS

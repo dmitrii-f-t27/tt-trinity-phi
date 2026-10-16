@@ -1,12 +1,15 @@
 # Tiny Tapeout project information - Trinity Phi, GF16 DOT4 (SKY26d)
 # https://tinytapeout.com/specs/info_yaml/
 #
-# Contract: specs/numeric/gf16_dot4_sky26d.t27 (issue #100). Whether this design fits one
-# 1x1 tile and meets 50 MHz is UNKNOWN until the GDS run of the final commit says so.
+# Contract: specs/numeric/gf16_dot4_sky26d.t27 (issue #100), unchanged.
+# ISOLATED EVALUATION BRANCH: physical envelope from specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27
+# (1x2 tiles, 25 MHz target). Not acceptance of #100 (its target stays one 1x1 tile), not ready,
+# nothing ordered: 2 is the number of tile units this shape requires, NOT a number of allocated slots.
+# Fit in 1x2 and timing at 25 MHz are UNKNOWN until the GDS run (all-corner STA) of the latest commit.
 yaml_version: 6
 
 project:
-  title:        "Trinity Phi - GF16 DOT4 (pin-loadable)"
+  title:        "Trinity Phi - GF16 DOT4 (pin-loadable, 1x2 evaluation)"
   author:       "Dmitrii Vasilev (original project); Dmitrii Fedorov (DOT4 rewrite)"
   discord:      "ghashtag"
   description:  >
@@ -17,10 +20,10 @@ project:
     Multiply rounds to nearest with ties toward zero; add is exact round-to-nearest-even.
     uio is input only.
   language:     "Verilog"
-  clock_hz:     50000000
+  clock_hz:     25000000    # evaluation TARGET, not a measured or claimed performance
 
-  # One tile. Fit in 1x1 is proven only by the GDS run of the final commit.
-  tiles:        "1x1"
+  # 1x2 evaluation envelope (2 required tile units, not allocated). Fit is proven only by the GDS run.
+  tiles:        "1x2"
 
   top_module:   "tt_um_trinity_nano"
 

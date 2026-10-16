@@ -4,13 +4,25 @@
 
 One truth for the source list: info.yaml `source_files` == test/Makefile PROJECT_SOURCES ==
 the files that the top module `tt_um_trinity_nano` actually instantiates (transitively).
-It also checks: top module name, 1x1 tile, full 8+8+8 pinout, the official @ttsky26d action pin in
-the TT workflows (and no older shuttle tag), test/requirements.txt, and that the active
-RTL contains no arithmetic multiply operator (R-SI-1; sensitivity lists and attributes are
-not arithmetic). Python 3 standard library only.
-Usage (repo root): python3 test/check_project.py        (exit 0 = consistent)
+It also checks: top module name, the tile shape and clock of the selected physical profile, full
+8+8+8 pinout, the official @ttsky26d action pin in the TT workflows (and no older shuttle tag),
+test/requirements.txt, and that the active RTL contains no arithmetic multiply operator (R-SI-1;
+sensitivity lists and attributes are not arithmetic). Python 3 standard library only.
+
+Physical profile, chosen by the environment variable PHI_PROFILE (exact values only):
+  unset / "default"  1x1, clock_hz 50000000, CLOCK_PERIOD 20 (the original #100 envelope)
+  "eval-1x2"         isolated evaluation: 1x2, clock_hz 25000000, CLOCK_PERIOD 40, density 65,
+                     AREA 1, MFS3 False, AREA_USE_NF False; the constants of
+                     specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27 must agree with info.yaml and
+                     src/config.json, its latency must equal LATENCY_CLOCKS = 8 of the numeric spec, and
+                     the numeric spec must be byte-identical to NUMERIC_SPEC_SHA256.
+Any other value fails. A profile only selects exact expected values; no check is relaxed.
+Usage (repo root): python3 test/check_project.py                       (exit 0 = consistent)
+                   PHI_PROFILE=eval-1x2 python3 test/check_project.py
 """
 import glob
+import hashlib
+import json
 import os
 import re
 import sys
@@ -21,6 +33,24 @@ SRC = os.path.join(ROOT, "src")
 TOP = "tt_um_trinity_nano"
 # commit that the annotated tag TinyTapeout/tt-gds-action@ttsky26d dereferences to
 TT_PIN = "395eedb3eeec3c2f4961c3b04ff2cf87f5525636"
+
+NUMERIC_SPEC = os.path.join(ROOT, "specs", "numeric", "gf16_dot4_sky26d.t27")
+NUMERIC_SPEC_SHA256 = "01249989ab5688eb78fc6950880238102daf6608b7cf1946b29b7277f53003c9"
+PHYSICAL_SPEC = os.path.join(ROOT, "specs", "physical", "gf16_dot4_sky26d_1x2_25mhz_eval.t27")
+
+# Exact expectations per physical profile; `config` lists the src/config.json keys that must hold
+# exactly these values (keys not listed are not touched by a profile).
+PROFILES = {
+    "default": {
+        "tiles": "1x1", "clock_hz": 50000000, "sidecar": None,
+        "config": {"CLOCK_PERIOD": 20},
+    },
+    "eval-1x2": {
+        "tiles": "1x2", "clock_hz": 25000000, "sidecar": PHYSICAL_SPEC,
+        "config": {"CLOCK_PERIOD": 40, "PL_TARGET_DENSITY_PCT": 65, "SYNTH_STRATEGY": "AREA 1",
+                   "SYNTH_ABC_USE_MFS3": False, "SYNTH_ABC_AREA_USE_NF": False},
+    },
+}
 
 errors = []
 
@@ -188,17 +218,66 @@ def yaml_guard():
             fail("%s does not parse as YAML: %s" % (name, e))
 
 
+def spec_consts(path):
+    """`pub const NAME : type = value;` lines of a .t27 file, integer values only."""
+    consts = {}
+    for name, val in re.findall(r"^pub const (\w+)\s*:\s*\w+\s*=\s*(0x[0-9A-Fa-f]+|\d+)\s*;", read(path), re.M):
+        consts[name] = int(val, 0)
+    return consts
+
+
+def profile_gate(name, prof, tiles, clock):
+    """Exact tile shape, clock and config values of the selected profile, and for the evaluation
+    profile the agreement of the physical sidecar with info.yaml, config.json and the numeric spec."""
+    if tiles != prof["tiles"]:
+        fail("info.yaml tiles is %r, expected %s (profile %s)" % (tiles, prof["tiles"], name))
+    if clock != prof["clock_hz"]:
+        fail("info.yaml clock_hz is %r, expected %d (profile %s)" % (clock, prof["clock_hz"], name))
+    cfg = json.loads(read(os.path.join(SRC, "config.json")))
+    for key, want in prof["config"].items():
+        got = cfg.get(key, "<missing>")
+        # exact type too: False must not match 0, 40 must not match 40.0
+        if type(got) is not type(want) or got != want:
+            fail("src/config.json %s is %r, expected %r (profile %s)" % (key, got, want, name))
+    period = cfg.get("CLOCK_PERIOD")
+    if not isinstance(clock, int) or not isinstance(period, int) or clock * period != 10 ** 9:
+        fail("info.yaml clock_hz %r and src/config.json CLOCK_PERIOD %r ns are not one clock" % (clock, period))
+    if prof["sidecar"] is None:
+        return
+    with open(NUMERIC_SPEC, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    if digest != NUMERIC_SPEC_SHA256:
+        fail("numeric spec sha256 %s != %s (the functional SSOT must stay byte for byte)" % (digest, NUMERIC_SPEC_SHA256))
+    if not os.path.isfile(prof["sidecar"]):
+        fail("physical sidecar missing: %s" % os.path.relpath(prof["sidecar"], ROOT))
+        return
+    side = spec_consts(prof["sidecar"])
+    num = spec_consts(NUMERIC_SPEC)
+    want = {"TILES_X": int(prof["tiles"].split("x")[0]), "TILES_Y": int(prof["tiles"].split("x")[1]),
+            "REQUIRED_TILE_UNITS": 2, "CLOCK_HZ": prof["clock_hz"], "CLOCK_PERIOD_NS": prof["config"]["CLOCK_PERIOD"],
+            "LATENCY_ENABLED_CLOCKS": 8}
+    for key, val in want.items():
+        if side.get(key) != val:
+            fail("sidecar %s is %r, expected %r" % (key, side.get(key), val))
+    if num.get("LATENCY_CLOCKS") != 8 or side.get("LATENCY_ENABLED_CLOCKS") != num.get("LATENCY_CLOCKS"):
+        fail("latency: sidecar LATENCY_ENABLED_CLOCKS %r, numeric LATENCY_CLOCKS %r (both must be 8)"
+             % (side.get("LATENCY_ENABLED_CLOCKS"), num.get("LATENCY_CLOCKS")))
+
+
 def main():
     yaml_guard()
+    name = os.environ.get("PHI_PROFILE", "default")     # set but empty is unknown, not default
+    prof = PROFILES.get(name)
+    if prof is None:
+        fail("unknown PHI_PROFILE %r (known: %s)" % (name, ", ".join(sorted(PROFILES))))
+        print("CHECK_PROJECT FAIL: %d problem(s)" % len(errors))
+        return 1
     top, info_files, tiles, clock, pins = info_yaml()
     make_files = makefile_sources()
     mods = module_map()
     if top != TOP:
         fail("info.yaml top_module is %r, expected %s" % (top, TOP))
-    if tiles != "1x1":
-        fail("info.yaml tiles is %r, expected 1x1" % tiles)
-    if clock != 50000000:
-        fail("info.yaml clock_hz is %r, expected 50000000" % clock)
+    profile_gate(name, prof, tiles, clock)
     for kind in ("ui", "uo", "uio"):
         if sorted(i for k, i in pins if k == kind) != [str(n) for n in range(8)]:
             fail("info.yaml pinout must list %s[0..7] exactly once" % kind)
@@ -226,8 +305,8 @@ def main():
     if errors:
         print("CHECK_PROJECT FAIL: %d problem(s)" % len(errors))
         return 1
-    print("CHECK_PROJECT PASS: top %s, 1x1, %d source files == Makefile == instantiated: %s"
-          % (TOP, len(info_files), ", ".join(sorted(info_files))))
+    print("CHECK_PROJECT PASS: profile %s, top %s, %s, %d Hz, %d source files == Makefile == instantiated: %s"
+          % (name, TOP, tiles, clock, len(info_files), ", ".join(sorted(info_files))))
     return 0
 
 

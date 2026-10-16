@@ -3,8 +3,15 @@
 `tt_um_trinity_nano` is a dot product of two 4-element vectors in the 16-bit GF16 float format
 (1 sign, 6 exponent, 9 mantissa, bias 31): the host loads A[0..3] and B[0..3] as 16 bytes through
 `ui_in`, starts the computation, and reads the 16-bit result a byte at a time from `uo_out`. One shared
-multiplier and one shared adder, 8 clocks per dot product; `uio` is input only. Target: one 1x1 tile,
-sky130A, 50 MHz.
+multiplier and one shared adder, 8 clocks per dot product; `uio` is input only. Issue #100 target: one
+1x1 tile, sky130A.
+
+> **Isolated evaluation branch.** This branch only evaluates the physical envelope 1x2 tiles / 25 MHz
+> (40 ns) target, set by [`specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27`](specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27)
+> and `info.yaml`; the numeric contract, the RTL and the tests are unchanged. It is not acceptance of #100,
+> not ready, and nothing is ordered: 2 is the number of tile units the 1x2 shape requires, not a number of
+> allocated slots. 25 MHz is a target, not a measured or claimed performance. RTL comments that say 1x1
+> are history of the #100 contract; the physical envelope of this branch is the sidecar and `info.yaml`.
 
 ## Status (read this first)
 
@@ -16,9 +23,10 @@ This is work in progress for TTSKY26d, tracked in issue
   sweeps, pin tests, mutations, synthesis audit, archived comparison jobs), `gds.yaml`, `docs.yaml`, and
   the older gates `no_star.yaml` and `tri-test.yml`. A job counts only if it is green on the SAME commit as
   the others; the archived-file gates are treated as they are, not as proof for the active design.
-- **Only the `gds`, `precheck` and `gl_test` jobs of `gds.yaml` decide** fit in one 1x1 tile, the layout
-  checks and the gate-level result, on the commit being judged. The Yosys cell count in `test.yaml` is a
-  record, not an area or fit claim, and timing at 50 MHz is not established by anything but that run.
+- **Only the `gds`, `precheck` and `gl_test` jobs of `gds.yaml` decide** fit in the tile shape of
+  `info.yaml` (1x2 on this branch), the layout checks and the gate-level result, on the commit being judged.
+  The Yosys cell count in `test.yaml` is a record, not an area or fit claim, and timing at the `info.yaml`
+  clock (25 MHz target on this branch) is not established by anything but the all-corner STA of that run.
   The optional `viewer` job only publishes a view and proves nothing.
 - **Not claimed:** performance, energy, TOPS/W, silicon results. No die of this design exists, and nothing
   has been submitted.

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 ; gf16_dot4_sky26d_1x2_25mhz_eval.t27 - physical EVALUATION sidecar for GF16 DOT4, 1x2 tile, 25 MHz target, sky130A, TT SKY26d
 ; Issue: https://github.com/gHashTag/tt-trinity-phi/issues/100
-; Status: EVALUATION ONLY, written before any metadata change. NOT VALIDATED: t27c parse and
-; typecheck have not been run on this file yet, and none of its assertions has been executed.
+; Status: EVALUATION ONLY, committed before any metadata change (commit f002d24). This header
+; does not record results: whether parse, typecheck and the test blocks pass is shown only by the
+; CI receipts (native t27c gate) of the commit in question; the physical verdict is UNKNOWN until
+; the GDS run of the latest commit says so.
 ; This file is NOT acceptance of issue #100. The #100 target stays one 1x1 tile; a 1x2 result,
 ; even a fully green one, does not meet #100 and must never be reported as meeting it.
 ; Not ready for submission. No allocation, purchase, payment, transfer, submission or project

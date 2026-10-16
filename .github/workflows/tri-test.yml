@@ -80,10 +80,12 @@ jobs:
           echo "=== Checking top_module = tt_um_trinity_nano ==="
           grep -q 'module tt_um_trinity_nano' src/tt_um_trinity_nano.v && echo "PASS" || (echo "FAIL: top module not found" && exit 1)
 
+      # Isolated 1x2 evaluation branch (specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27); the exact
+      # profile check is PHI_PROFILE=eval-1x2 test/check_project.py in test.yaml.
       - name: Verify info.yaml tiles
         run: |
-          echo "=== Checking tiles = 1x1 ==="
-          grep -q 'tiles.*1x1' info.yaml && echo "PASS: tiles=1x1" || (echo "FAIL: wrong tiles" && exit 1)
+          echo "=== Checking tiles = 1x2 (evaluation profile) ==="
+          grep -qE '^\s*tiles:\s*"1x2"' info.yaml && echo "PASS: tiles=1x2" || (echo "FAIL: wrong tiles" && exit 1)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

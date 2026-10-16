@@ -356,7 +356,7 @@ def write_reports(out, results, problems, meta):
               else "Calibration baseline unavailable (see problems).", "",
               "The probe areas are NOT additive: each probe optimises across a different boundary, so mul + add + storage "
               "is not the full area and this is not a physical partition. The storage probe excludes the area of the two "
-              "black boxes explicitly. 1-tile fit is decided by the main GDS job only."]
+              "black boxes explicitly. Fit in the tile shape of info.yaml is decided by the main GDS job only."]
     for note in meta.get("notes", []):
         lines.append("Note: " + note)
     if problems:

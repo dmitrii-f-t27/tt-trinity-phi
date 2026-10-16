@@ -207,7 +207,7 @@ def write_report(out, rows, problems, meta):
     if problems:
         lines += ["Problems:"] + ["- " + p for p in problems] + [""]
     lines += ["Same src/config_merged.json, same PDK and cell exclusions, run directory `%s`; `runs/wokwi` untouched." % meta["run_dir"],
-              "The area is the synthesis area only. 1-tile fit is decided by the main GDS job on the last SHA, never here, "
+              "The area is the synthesis area only. Fit in the tile shape of info.yaml is decided by the main GDS job on the last SHA, never here, "
               "even when an area is smaller than the calibration value."]
     with open(os.path.join(out, "SYNTH_EXPLORE.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")

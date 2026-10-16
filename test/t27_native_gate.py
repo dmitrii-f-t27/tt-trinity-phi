@@ -34,10 +34,17 @@ Gate (any failure = non-zero exit):
          accepted: it would be an infrastructure problem hiding behind a BLOCKED verdict.
      Exit 0 / all tests pass, a missing Zig, a crash, or any other outcome fails the gate: the native
      path would then be unable to see a wrong spec.
+  6. OPTIONAL, only with --physical-spec (the 1x2 evaluation sidecar): on the same t27c and Zig, parse
+     exit 0, typecheck `0 errors, 0 warnings`, and test-report exit 0, not BLOCKED, with exactly as many
+     tests as the sidecar declares (EXPECT_PHYSICAL_TESTS `test` blocks), pass == tests, FAIL == 0. Its
+     sha256, the counts and the vacuous line are recorded. It is not sealed (a seal is not required for
+     the sidecar) and its `invariant` blocks are only COUNTED: test-report runs `test` blocks, so the
+     invariants are not reported as executed. Steps 1..5 above are unchanged by this option.
 Never `--force`; T27C_TEST_REPORT_EXIT_ZERO must be unset. Outputs of every step, the seal JSON and
 `native-summary.json` are written into --out for upload. The seal is NOT committed automatically.
 
 Usage (repo root): python3 test/t27_native_gate.py --t27c PATH --spec specs/numeric/gf16_dot4_sky26d.t27 --out DIR
+                   [--physical-spec specs/physical/gf16_dot4_sky26d_1x2_25mhz_eval.t27]
 """
 import argparse
 import json
@@ -48,6 +55,7 @@ import subprocess
 import sys
 
 EXPECT_MIN_TESTS = 23   # the spec has 23 `test` blocks; invariants are separate
+EXPECT_PHYSICAL_TESTS = 5   # the 1x2 evaluation sidecar declares exactly 5 `test` blocks (and 3 invariants)
 # (label, exact original line, replacement); each original must occur exactly once in the spec
 MUTATIONS = [
     ("false_const_assert",
@@ -136,6 +144,8 @@ def main():
     ap.add_argument("--t27-src", default=None,
                     help="checkout of the pinned t27 commit (source of the test runner witness)")
     ap.add_argument("--t27-commit", default=None, help="the exact commit that checkout must be at")
+    ap.add_argument("--physical-spec", default=None,
+                    help="optional physical sidecar: parse, typecheck and test-report it too (not sealed)")
     args = ap.parse_args()
 
     if not os.access(args.t27c, os.X_OK):
@@ -292,6 +302,10 @@ def main():
                                               "verdict": verdict}
         print("negative control %-20s -> %s" % (label, verdict))
 
+    # 6. optional physical sidecar (same t27c, same Zig, same env; not sealed)
+    if args.physical_spec:
+        physical_gate(args, env)
+
     with open(os.path.join(args.out, "native-summary.json"), "w") as f:
         json.dump(summary, f, indent=2, sort_keys=True)
 
@@ -300,7 +314,57 @@ def main():
         return 1
     print("NATIVE_GATE PASS: native parse, typecheck, test-report (%d/%d, 0 FAIL), seal --save and --verify, "
           "negative controls detected" % (nums["pass"], nums["tests"]))
+    if args.physical_spec:
+        print("NATIVE_GATE PASS (physical sidecar): parse, typecheck, test-report %d/%d, 0 FAIL; "
+              "%d invariants declared, not executed by test-report; not sealed"
+              % (summary["physical"]["test_report"]["pass"], summary["physical"]["test_report"]["tests"],
+                 summary["physical"]["invariants_declared"]))
     return 0
+
+
+def physical_gate(args, env):
+    """Step 6: the physical sidecar through the same run()/counts() helpers as the numeric spec."""
+    import hashlib
+    phys = {}
+    summary["physical"] = phys
+    if not os.path.isfile(args.physical_spec):
+        fail("physical spec does not exist: %s" % args.physical_spec)
+        return
+    with open(args.physical_spec, "rb") as f:
+        data = f.read()
+    text = data.decode("utf-8")
+    phys["spec"] = args.physical_spec
+    phys["sha256"] = hashlib.sha256(data).hexdigest()
+    declared = len(re.findall(r"^test\s+\"", text, re.M))
+    phys["tests_declared"] = declared
+    phys["invariants_declared"] = len(re.findall(r"^invariant\s+\w+", text, re.M))
+    phys["invariants_executed"] = "not claimed (test-report runs test blocks only)"
+    print("physical sidecar %s sha256 %s: %d tests, %d invariants declared"
+          % (args.physical_spec, phys["sha256"], declared, phys["invariants_declared"]))
+    if declared != EXPECT_PHYSICAL_TESTS:
+        fail("physical spec declares %d test blocks, expected %d" % (declared, EXPECT_PHYSICAL_TESTS))
+    p = run("physical-parse", [args.t27c, "parse", args.physical_spec], args.out, env)
+    if p.returncode != 0 or not p.stdout.strip():
+        fail("physical parse exit %d or empty output" % p.returncode)
+    p = run("physical-typecheck", [args.t27c, "typecheck", args.physical_spec], args.out, env)
+    if p.returncode != 0 or not re.search(r"Typecheck OK \(0 errors, 0 warnings\)", p.stdout + p.stderr):
+        fail("physical typecheck exit %d or not '0 errors, 0 warnings'" % p.returncode)
+    p = run("physical-test-report",
+            [args.t27c, "test-report", args.physical_spec, "--specs-dir", "specs", "--verbose"], args.out, env)
+    out = p.stdout
+    n = counts(out)
+    phys["test_report"] = n
+    phys["test_report_exit"] = p.returncode
+    m = re.search(r"vacuous passes\s+(\d+) of (\d+)", out)
+    phys["runtime_assert_vacuous_line"] = m.group(0) if m else None
+    print("physical test-report counts:", n, "| runtime-assert line:", phys["runtime_assert_vacuous_line"])
+    if p.returncode != 0:
+        fail("physical test-report exit %d (1 = a test FAILS, 2 = BLOCKED)" % p.returncode)
+    if "BLOCKED" in out:
+        fail("physical test-report is BLOCKED: blocked is not a pass")
+    if n["tests"] != EXPECT_PHYSICAL_TESTS or n["pass"] != EXPECT_PHYSICAL_TESTS or n["FAIL"] != 0:
+        fail("physical test-report tests=%s pass=%s FAIL=%s, need %d/%d and FAIL 0"
+             % (n["tests"], n["pass"], n["FAIL"], EXPECT_PHYSICAL_TESTS, EXPECT_PHYSICAL_TESTS))
 
 
 if __name__ == "__main__":
