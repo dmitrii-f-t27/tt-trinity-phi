@@ -1,0 +1,178 @@
+// SPDX-License-Identifier: Apache-2.0
+; gf16_dot4_sky26d_1x2_25mhz_eval.t27 - physical EVALUATION sidecar for GF16 DOT4, 1x2 tile, 25 MHz target, sky130A, TT SKY26d
+; Issue: https://github.com/gHashTag/tt-trinity-phi/issues/100
+; Status: EVALUATION ONLY, written before any metadata change. NOT VALIDATED: t27c parse and
+; typecheck have not been run on this file yet, and none of its assertions has been executed.
+; This file is NOT acceptance of issue #100. The #100 target stays one 1x1 tile; a 1x2 result,
+; even a fully green one, does not meet #100 and must never be reported as meeting it.
+; Not ready for submission. No allocation, purchase, payment, transfer, submission or project
+; creation follows from this file; each of those stays pending an explicit owner decision,
+; also after a technical PASS.
+; Authors: Dmitrii Fedorov (@dmitrii-f-t27); original project author Dmitrii Vasilev.
+; License: Apache-2.0 (see SPDX line above).
+; phi^2 + 1/phi^2 = 3 | TRINITY
+
+module physical-gf16_dot4_1x2_25mhz_eval;
+
+// ============================================================================
+// 1. Scope
+// ============================================================================
+//
+// The functional SSOT is specs/numeric/gf16_dot4_sky26d.t27. It is kept byte for
+// byte (SHA-256 01249989ab5688eb78fc6950880238102daf6608b7cf1946b29b7277f53003c9)
+// and is not imported, renamed or restated here. Unchanged by this sidecar:
+//   - the GF16 format S1 E6 M9, bias 31, MUL tie toward zero, ADD exact
+//     round-to-nearest-even, NaN / Inf / zero and the 2^-31 gap flush;
+//   - independent A and B operands, the left-fold DOT4 order;
+//   - the pins, the read map, reset, ena and READBACK behaviour;
+//   - the latency: exactly 8 enabled clock edges from an accepted GO to DONE.
+// The RTL sources, the independent oracle, the pin model, the test vectors, the
+// tests and the Makefile are also unchanged by this sidecar.
+//
+// This sidecar changes ONLY the target physical envelope, and only on the
+// isolated evaluation branch: tile shape 1x2 and a 25 MHz (40 ns) clock target.
+// The main branch keeps its own 1x1 envelope and is not touched.
+// The earlier 50 MHz figure was an unverified project target, not an owner
+// requirement. 25 MHz here is an evaluation TARGET, not a measured or claimed
+// performance; only real STA over all corners can confirm it.
+//
+// ============================================================================
+// 2. Tile envelope
+// ============================================================================
+//
+// Shape 1x2: one tile wide, two tiles high. The shape 2x1 is NOT in the official
+// template list and is not used.
+// Official template: TinyTapeout/tt-support-tools main, commit
+// 01d5d2814fa9dd61e9d211e0b235a4a592a9316a, file tt_block_1x2_pg.def:
+//   DIEAREA ( 0 0 ) ( 161000 225760 ) in nm, i.e. 161.000 x 225.760 um.
+// REQUIRED_TILE_UNITS is how many tile units this shape occupies. It is NOT a
+// number of allocated, purchased or confirmed slots; that number is UNKNOWN.
+// The core area of the 1x2 template is UNKNOWN here; only the real GDS run of
+// the evaluation branch reports it. No fit or utilization figure is asserted.
+//
+// ============================================================================
+// 3. Clock and latency
+// ============================================================================
+//
+// CLOCK_HZ * CLOCK_PERIOD_NS = 10^9 (25 MHz <-> 40 ns).
+// A DOT4 takes LATENCY_ENABLED_CLOCKS = 8 enabled clocks (E1..E8 of the numeric
+// spec, section 4). This value mirrors the numeric LATENCY_CLOCKS and must stay
+// equal to it. At the target clock that is a NOMINAL 8 * 40 = 320 ns from the
+// accepting edge E0 to DONE; it is arithmetic on the target, not a measurement.
+//
+// ============================================================================
+// 4. Evaluation criteria (decided by CI of the LATEST SHA of the evaluation branch)
+// ============================================================================
+//
+// The evaluation counts as "possible" only if ALL of the following hold on the
+// same latest SHA; anything else is a FAIL or an open item, never a PASS:
+//   1. GDS built, TT precheck PASS, gate-level test on the netlist PASS (not skipped).
+//   2. STA in every corner at the 40 ns target, reported as measured; DRC, LVS and
+//      antenna clean; utilization within the real 1x2 core.
+//   3. No bypass: no filter, check or exception weakened, no multicycle path, no
+//      false path, no clock gating, no new tech cell, no serial schedule.
+//   4. The same pin map as the numeric spec, section 3, and the same full pin test
+//      suite (all 14 pin checks) passing unchanged.
+//   5. The independent oracle and the functional RTL sources unchanged, and the full
+//      RTL suite (unit, mutations, native) PASS on that SHA.
+//   6. Docs built, and every page of the actual PDF visually checked.
+// Even with all six green: no allocation, purchase or submission without an
+// explicit owner decision. The observation concerns this RTL and this recipe; it
+// is not a theorem about 1x1 or about the optimality of 1x2.
+//
+// ============================================================================
+// 5. Constants
+// ============================================================================
+
+pub const TILES_X : u32 = 1;
+pub const TILES_Y : u32 = 2;
+pub const REQUIRED_TILE_UNITS : u32 = 2;
+
+// Official 1x2 template die, in nm
+pub const DIE_LLX_NM : u32 = 0;
+pub const DIE_LLY_NM : u32 = 0;
+pub const DIE_URX_NM : u32 = 161000;
+pub const DIE_URY_NM : u32 = 225760;
+
+pub const CLOCK_HZ : u32 = 25000000;
+pub const CLOCK_PERIOD_NS : u32 = 40;
+pub const NS_PER_SECOND : u32 = 1000000000;
+
+pub const LATENCY_ENABLED_CLOCKS : u32 = 8;
+pub const NOMINAL_LATENCY_NS : u32 = 320;
+
+// ============================================================================
+// 6. Pure functions (all u32)
+// ============================================================================
+
+pub fn eval_tile_units(tx: u32, ty: u32) u32 {
+    return tx * ty;
+}
+
+pub fn eval_die_width_nm() u32 {
+    return DIE_URX_NM - DIE_LLX_NM;
+}
+
+pub fn eval_die_height_nm() u32 {
+    return DIE_URY_NM - DIE_LLY_NM;
+}
+
+// Taller than wide: the 1x2 shape, not 2x1
+pub fn eval_is_one_by_two(tx: u32, ty: u32) bool {
+    return tx == 1 and ty == 2;
+}
+
+// Frequency and period agree when their product is exactly one second in ns
+pub fn eval_period_matches(hz: u32, period_ns: u32) bool {
+    return hz * period_ns == NS_PER_SECOND;
+}
+
+pub fn eval_nominal_latency_ns(clocks: u32, period_ns: u32) u32 {
+    return clocks * period_ns;
+}
+
+// ============================================================================
+// 7. TDD - Tests
+// ============================================================================
+
+test "eval_shape_is_1x2_not_2x1" {
+    assert(eval_is_one_by_two(TILES_X, TILES_Y));
+    assert(!eval_is_one_by_two(2, 1));
+}
+
+test "eval_required_tile_units_is_2" {
+    assert(eval_tile_units(TILES_X, TILES_Y) == REQUIRED_TILE_UNITS);
+    assert(REQUIRED_TILE_UNITS == 2);
+}
+
+test "eval_die_matches_official_template" {
+    assert(eval_die_width_nm() == 161000);
+    assert(eval_die_height_nm() == 225760);
+    assert(eval_die_height_nm() > eval_die_width_nm());
+}
+
+test "eval_clock_25mhz_is_40ns" {
+    assert(CLOCK_HZ == 25000000);
+    assert(CLOCK_PERIOD_NS == 40);
+    assert(eval_period_matches(CLOCK_HZ, CLOCK_PERIOD_NS));
+    assert(!eval_period_matches(50000000, CLOCK_PERIOD_NS));
+}
+
+test "eval_latency_stays_eight_clocks" {
+    assert(LATENCY_ENABLED_CLOCKS == 8);
+    assert(eval_nominal_latency_ns(LATENCY_ENABLED_CLOCKS, CLOCK_PERIOD_NS) == NOMINAL_LATENCY_NS);
+    assert(NOMINAL_LATENCY_NS == 320);
+}
+
+// ============================================================================
+// 8. Invariants
+// ============================================================================
+
+invariant eval_two_required_tile_units
+    assert eval_tile_units(TILES_X, TILES_Y) == REQUIRED_TILE_UNITS and REQUIRED_TILE_UNITS == 2
+
+invariant eval_clock_period_relation
+    assert eval_period_matches(CLOCK_HZ, CLOCK_PERIOD_NS)
+
+invariant eval_eight_clocks
+    assert LATENCY_ENABLED_CLOCKS == 8 and eval_nominal_latency_ns(LATENCY_ENABLED_CLOCKS, CLOCK_PERIOD_NS) == NOMINAL_LATENCY_NS
