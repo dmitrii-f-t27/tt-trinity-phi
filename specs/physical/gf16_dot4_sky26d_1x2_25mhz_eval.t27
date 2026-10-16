@@ -103,6 +103,12 @@ pub const NS_PER_SECOND : u32 = 1000000000;
 pub const LATENCY_ENABLED_CLOCKS : u32 = 8;
 pub const NOMINAL_LATENCY_NS : u32 = 320;
 
+// Physical sign-off policy, see section 9
+pub const SIGNOFF_STA_CORNERS : u32 = 9;
+pub const SIGNOFF_MAX_SLEW_PS : u32 = 750;
+pub const SIGNOFF_MAX_FANOUT : u32 = 10;
+pub const SIGNOFF_ALLOWED_VIOLATIONS : u32 = 0;
+
 // ============================================================================
 // 6. Pure functions (all u32)
 // ============================================================================
@@ -178,3 +184,37 @@ invariant eval_clock_period_relation
 
 invariant eval_eight_clocks
     assert LATENCY_ENABLED_CLOCKS == 8 and eval_nominal_latency_ns(LATENCY_ENABLED_CLOCKS, CLOCK_PERIOD_NS) == NOMINAL_LATENCY_NS
+
+// ============================================================================
+// 9. Physical sign-off policy (added after the 51bf202 GDS run)
+// ============================================================================
+//
+// Observed at 51bf202 (GDS workflow 38848817200, LibreLane 3.0.14): Build GDS
+// SUCCESS; post-PnR STA in all 9 corners with 0 setup and 0 hold violations;
+// Magic DRC 0, LVS 0, antenna 0. Still OPEN: 167 max-slew violations (worst
+// corner max_ss_100C_1v60, limit 0.75 ns) and 1 max-fanout violation on the clock
+// root clkbuf_0_clk/X (16 against a limit of 10). The flow stayed green because
+// the official max-slew checker only warns by default, and no max-fanout checker
+// exists in the flow. A green Build GDS is therefore NOT a sign-off.
+//
+// Policy for every later commit of this evaluation branch. The commit counts as
+// physically clean only if ALL of this holds, read from the run of that commit:
+//   1. The post-PnR STA reports and metrics exist for all SIGNOFF_STA_CORNERS
+//      corners; a missing corner is a FAIL, never a skip.
+//   2. In every corner: setup and hold violation count 0, worst setup and hold
+//      slack >= 0; max cap, max slew and max fanout violation count 0. The clock
+//      network is included: there is no waiver for clock fanout.
+//   3. Magic DRC 0, LVS 0, antenna 0; utilization <= 100 % of the real core.
+//   4. Limits stay as given by the PDK/SDC: max transition SIGNOFF_MAX_SLEW_PS ps,
+//      max fanout SIGNOFF_MAX_FANOUT. No limit is raised and no corner is dropped.
+//   5. No filter or check weakened, no multicycle or false path, no clock period,
+//      latency or uncertainty change, no functional, pin or 8-clock change.
+// Allowed, as a STRICTER cell choice for this physical-flow recipe (synthesis and
+// repair): the two delay cells sky130_fd_sc_hd__clkdlybuf4s25_1 and
+// sky130_fd_sc_hd__clkdlybuf4s50_1 may be excluded from cell mapping. No cell is added to the allowed set. Its source
+// and effect must be recorded, and the run must show both cells absent from the
+// final netlist. This exclusion is not a proof that it explains all 167
+// violations; only the next run's reports decide.
+// The clock-root fanout stays OPEN until a real CTS result meets the limit of 10;
+// it is neither ignored nor waived.
+// The SIGNOFF_* constants of section 5 hold the numbers of this policy.
