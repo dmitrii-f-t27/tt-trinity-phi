@@ -210,11 +210,19 @@ invariant eval_eight_clocks
 //   5. No filter or check weakened, no multicycle or false path, no clock period,
 //      latency or uncertainty change, no functional, pin or 8-clock change.
 // Allowed, as a STRICTER cell choice for this physical-flow recipe (synthesis and
-// repair): the two delay cells sky130_fd_sc_hd__clkdlybuf4s25_1 and
-// sky130_fd_sc_hd__clkdlybuf4s50_1 may be excluded from cell mapping. No cell is added to the allowed set. Its source
-// and effect must be recorded, and the run must show both cells absent from the
-// final netlist. This exclusion is not a proof that it explains all 167
-// violations; only the next run's reports decide.
-// The clock-root fanout stays OPEN until a real CTS result meets the limit of 10;
-// it is neither ignored nor waived.
+// repair): the three sky130_fd_sc_hd delay-cell families, matched by the exact
+// patterns sky130_fd_sc_hd__clkdlybuf*, sky130_fd_sc_hd__dlygate* and
+// sky130_fd_sc_hd__dlymetal*, may be excluded from cell mapping. The official
+// no_synth / drc_exclude rules stay as they are; no cell is added to the allowed
+// set. Source and effect must be recorded, and the run must show no instance of
+// any cell matching those patterns in the final netlist.
+// History: 51bf202 excluded nothing (all 16 slew-violating drivers were
+// clkdlybuf4s25_1). 9eb7373 excluded only clkdlybuf4s25_1 and clkdlybuf4s50_1:
+// those cells were gone and the clock-root fanout was 0 in all 9 corners, but
+// 105 slew violations remained, all 8 violating drivers in max_ss were
+// dlygate4sd3_1, and the worst setup path also held dlymetal6s4s_1. The family
+// exclusion is a hypothesis drawn from that, not a guarantee; its effect on
+// slew, setup, hold and area is decided only by the reports of all 9 corners.
+// The clock-root fanout stays OPEN until a real CTS result meets the limit of 10
+// in all 9 corners; it is neither ignored nor waived.
 // The SIGNOFF_* constants of section 5 hold the numbers of this policy.
